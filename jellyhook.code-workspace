@@ -1,0 +1,44 @@
+{
+  "folders": [
+    {
+      "name": "🥕 Root",
+      "path": "."
+    },
+    {
+      "name": "💻 VS Code",
+      "path": "./.vscode"
+    },
+    {
+      "name": "🚀 Api",
+      "path": "./api",
+      "settings": {
+        "[python]": {
+          "defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+        }
+      }
+    },
+    {
+      "name": "🔧 Workers",
+      "path": "./workers",
+      "settings": {
+        "[python]": {
+          "defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+        }
+      }
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.git": true,
+      "**/__pycache__": true,
+      "**/*.egg-info": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/.ruff_cache": true
+    },
+    "editor.formatOnSave": true,
+    "python.terminal.activateEnvironment": true,
+    "ruff.configuration": "../.ruff.toml",
+    // "mypy-type-checker.args": ["--config-file=../mypy.ini"]
+  }
+}

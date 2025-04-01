@@ -1,0 +1,72 @@
+# Enable specific rule sets instead of ALL to avoid conflicts
+lint.select = [
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "D",   # pydocstyle
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "SIM", # flake8-simplify
+    "W",   # pycodestyle warnings
+]
+
+line-length = 100
+
+# Resolve conflicting rules by selecting one
+lint.ignore = [
+    "D203", # Prefer no-blank-line-before-class (D211)
+    "D213", # Prefer multi-line-summary-first-line (D212)
+]
+
+# Test-specific ignores
+[lint.per-file-ignores]
+"**/tests/**/*.py" = [
+    "ANN001", # Unused type annotation
+    "ANN201", # Return type annotation missing
+    "ARG001", # Unused function argument
+    "D100",   # Missing docstring in public module
+    "D101",   # Missing docstring in public class
+    "D102",   # Missing docstring in public method
+    "D103",   # Missing docstring in public function
+    "D104",   # Missing docstring in public package
+    "E501",   # Line too long
+    "S101",   # Use of assert detected
+]
+
+# Global ignores for all Python files
+"**/*.py" = [
+    "ARG002",  # Unused method argument
+    "BLE001",
+    "C901",
+    "D100",
+    "D104",
+    "D401",
+    "D413",
+    "EM101",
+    "FA102",
+    "FBT001",
+    "FBT002",
+    "G004",
+    "PLR0912",
+    "PLR0913",
+    "S104",
+    "S603",
+    "SLF001",
+    "T100",
+    "TRY003",
+    "TRY401",
+]
+
+# Sort imports configuration
+[lint.isort]
+combine-as-imports = true
+force-wrap-aliases = true
+known-first-party = ["jellyhook_api"]
+
+# Format configuration
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+docstring-code-format = true
