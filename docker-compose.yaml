@@ -1,0 +1,55 @@
+networks:
+  jellyhook:
+    name: jellyhook
+    driver: bridge
+
+services:
+  rabbitmq:
+    image: rabbitmq:4.0.5-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - jellyhook
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      args:
+        ENV: development
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./api:/app
+    networks:
+      - jellyhook
+    depends_on:
+      - rabbitmq
+    environment:
+      FLASK_APP: api/main.py
+      FLASK_ENV: development
+      SECRET_KEY: "8c479385d36a35da658cc99b8be82e54b94fa3c0d4e5d9f8"
+    command: flask --app api.main --debug run --host=0.0.0.0 --port=5001
+
+  worker:
+    build:
+      context: ./workers
+      dockerfile: Dockerfile
+      args:
+        ENV: development
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./workers:/app
+      - /Volumes/data:/data
+    networks:
+      - jellyhook
+    depends_on:
+      - rabbitmq
+    environment:
+      DEBUG: "1"
+      MOVIE_PATH: "/data/media/movies"
+      TEMP_DIR: "/data/tmp"
+      RABBITMQ_HOST: rabbitmq
+      WORKER_ENV: development
+      PYDEVD_DISABLE_FILE_VALIDATION: "0"
