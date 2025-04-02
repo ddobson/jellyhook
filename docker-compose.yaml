@@ -17,6 +17,7 @@ services:
       dockerfile: Dockerfile
       args:
         ENV: development
+    image: jellyhook:api-local
     ports:
       - "5001:5001"
     volumes:
@@ -37,6 +38,7 @@ services:
       dockerfile: Dockerfile
       args:
         ENV: development
+    image: jellyhook:worker-local
     ports:
       - "5678:5678"
     volumes:
