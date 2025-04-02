@@ -7,9 +7,9 @@ import pika.adapters.blocking_connection
 import pika.credentials
 import pika.spec
 
-from . import config
-from .hooks.item_added import item_added
-from .logger import logger
+from workers import config
+from workers.hooks.item_added import item_added
+from workers.logger import logger
 
 
 def on_message(

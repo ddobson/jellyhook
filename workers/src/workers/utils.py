@@ -3,8 +3,8 @@ import subprocess
 import time
 from collections.abc import Callable
 
-from .config import MOVIE_PATH, STANDUP_PATH
-from .logger import logger
+from workers.config import MOVIE_PATH, STANDUP_PATH
+from workers.logger import logger
 
 
 class WebhookWorkerError(Exception):
