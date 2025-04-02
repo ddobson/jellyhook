@@ -3,12 +3,12 @@ FROM python:3.13-slim
 ARG ENV="production"
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y gpg apt-transport-https ca-certificates && \
-    apt-get update && apt-get install -y \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     ffmpeg \
     mkvtoolnix \
-    git \
     curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dovi_tool
