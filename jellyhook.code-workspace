@@ -28,17 +28,24 @@
     }
   ],
   "settings": {
-    "files.exclude": {
-      "**/.git": true,
-      "**/__pycache__": true,
-      "**/*.egg-info": true,
-      "**/.pytest_cache": true,
-      "**/.mypy_cache": true,
-      "**/.ruff_cache": true
-    },
+    "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.formatOnSave": true,
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/.git": true,
+      "**/.mypy_cache": true,
+      "**/.pytest_cache": true,
+      "**/.ruff_cache": true,
+      "**/*.egg-info": true
+    },
+    // "mypy-type-checker.args": ["--config-file=../mypy.ini"],
+    "python.analysis.extraPaths": [
+      "../api/src",
+      "../workers/src"
+    ],
     "python.terminal.activateEnvironment": true,
-    "ruff.configuration": "../.ruff.toml",
-    // "mypy-type-checker.args": ["--config-file=../mypy.ini"]
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "ruff.configuration": "../.ruff.toml"
   }
 }
