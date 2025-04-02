@@ -1,4 +1,6 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
+
+ARG ENV="production"
 
 WORKDIR /app
 
@@ -25,8 +27,14 @@ ENV PATH="/root/.local/bin/:$PATH"
 COPY pyproject.toml README.md ./
 COPY src ./src/
 
-# Install dependencies
-RUN uv pip install --system --no-cache-dir .
+# Install python dependencies
+RUN if [ "$ENV" = "development" ]; then \
+        uv export > requirements.txt && \
+        uv pip install --system --no-cache-dir -r requirements.txt && \
+        rm requirements.txt; \
+    else \
+        uv pip install --system --no-cache-dir .; \
+    fi
 
 # Create log directory and set permissions
 RUN mkdir -p /config/logs && \
