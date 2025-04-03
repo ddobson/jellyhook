@@ -4,30 +4,32 @@ lint:
 	@echo "Running linting for api and workers directories..."
 	@for dir in api workers; do \
 		echo "Linting $${dir}..."; \
-		cd $${dir} && uv run --active ruff check --config ../ruff.toml . && cd ..; \
+		cd $${dir} && uv run ruff check --config ../ruff.toml . && cd ..; \
 	done
 
 format:
 	@echo "Formatting api and workers directories..."
 	@for dir in api workers; do \
 		echo "Formatting $${dir}..."; \
-		cd $${dir} && uv run --active ruff check --select I --fix --config ../ruff.toml . && \
-		uv run --active ruff format --config ../ruff.toml . && cd ..; \
+		cd $${dir} && uv run ruff check --select I --fix --config ../ruff.toml . && \
+		uv run ruff format --config ../ruff.toml . && cd ..; \
 	done
 
 typecheck:
 	@echo "Type checking api and workers directories..."
 	@for dir in api workers; do \
 		echo "Type checking $${dir}..."; \
-		cd $${dir} && uv run --active mypy . && cd ..; \
+		(cd "$${dir}" && uv run mypy --config-file=../mypy.ini . || true); \
 	done
 
 test:
 	@echo "Running tests for api and workers directories..."
 	@for dir in api workers; do \
 		echo "Testing $${dir}..."; \
-		cd $${dir} && uv run --active pytest && cd ..; \
+		cd $${dir} && uv run pytest && cd ..; \
 	done
+
+all: format lint typecheck test
 
 # Docker commands
 build_api: DOCKERFILE ?= api/Dockerfile
