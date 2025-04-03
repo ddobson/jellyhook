@@ -1,6 +1,15 @@
 import os
+from enum import StrEnum
 
 from flask import Flask
+
+
+class Env(StrEnum):
+    """Environment variables."""
+
+    DEVELOPMENT = "development"
+    PRODUCTION = "production"
+    TESTING = "testing"
 
 
 class Config:
