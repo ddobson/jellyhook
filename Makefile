@@ -1,4 +1,4 @@
-.PHONY: lint typecheck test build tag push
+.PHONY: lint format format-check typecheck test build tag push
 
 lint:
 	@echo "Running linting for api and workers directories..."
@@ -13,6 +13,14 @@ format:
 		echo "Formatting $${dir}..."; \
 		cd $${dir} && uv run ruff check --select I --fix --config ../ruff.toml . && \
 		uv run ruff format --config ../ruff.toml . && cd ..; \
+	done
+
+format-check:
+	@echo "Checking formatting for api and workers directories..."
+	@for dir in api workers; do \
+		echo "Checking format for $${dir}..."; \
+		cd $${dir} && uv run ruff check --select I --config ../ruff.toml . && \
+		uv run ruff format --check --config ../ruff.toml . && cd ..; \
 	done
 
 typecheck:

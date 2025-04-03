@@ -2,6 +2,14 @@
 
 A microservice architecture for processing Jellyfin media server events via webhooks. The system receives events from a Jellyfin server, queues them through RabbitMQ, and processes them asynchronously, with special handling for media processing tasks such as Dolby Vision conversion.
 
+## Features
+
+- **Webhook Reception**: Secure endpoint for receiving Jellyfin webhook events
+- **Asynchronous Processing**: Decoupled architecture using RabbitMQ for reliable message queuing
+- **Media Processing**: Specialized handlers for different Jellyfin events
+- **Dolby Vision Conversion**: Automatic conversion from Dolby Vision Profile 7.x to 8.x format
+- **Multi-platform Support**: Docker images for both ARM64 and AMD64 architectures
+
 ## Overview
 
 Jellyhook consists of two main components:
@@ -18,9 +26,13 @@ jellyhook/
 │   │   ├── hooks/        # Webhook handlers
 │   │   └── ...          
 │   └── tests/            # API tests
-└── workers/              # Worker service
-    ├── src/workers/      # Worker source code
-    └── tests/            # Worker tests
+├── workers/              # Worker service
+│   ├── src/workers/      # Worker source code
+│   │   ├── hooks/        # Message processors
+│   │   ├── services/     # Service implementations
+│   │   └── ...
+│   └── tests/            # Worker tests
+└── item_added_hook.example.json # Example webhook payload
 ```
 
 ## Development
@@ -30,7 +42,8 @@ jellyhook/
 - Python 3.12+
 - uv (Python package manager)
 - Docker and Docker Compose (for containerized development)
-- RabbitMQ (can be run via Docker)
+- RabbitMQ (included in Docker Compose setup)
+- Media processing tools: ffmpeg, mkvextract, mkvmerge, dovi_tool
 
 ### Setup
 
@@ -54,57 +67,85 @@ make lint
 make format
 
 # Type checking
-make typecheck
+make typecheck  # Project is not yet type compliant
 
 # Run tests
 make test
 
-# Or run tests in specific directories
-cd api && uv run pytest
+# Run all checks
+make all
 ```
 
 ### Running Locally
 
-Run the API service:
+Using Docker Compose (recommended):
 ```bash
-cd api
-FLASK_ENV=development uv run python -m api.main
+docker-compose up -d
 ```
+
+Or run services individually:
+
 
 Run workers:
 ```bash
 cd workers
-# Commands will depend on your worker implementation
+uv run python -m workers.main
 ```
 
 ## Deployment
 
-Build and run with Docker:
+### Building and Pushing Docker Images
+
+The project includes Makefile commands for building and pushing multi-architecture Docker images:
 
 ```bash
-# Build images
-make build dockerfile=Dockerfile.api tag=latest
-make build dockerfile=Dockerfile.workers tag=latest
+# Build API image
+make build_api TAG=v1.0.0
 
-# Tag images
-make tag tag=latest
+# Build Worker image
+make build_worker TAG=v1.0.0
+
+# Tag images for GitHub Container Registry
+make tag_api ACCOUNT=your-github-username TAG=v1.0.0
+make tag_worker ACCOUNT=your-github-username TAG=v1.0.0
 
 # Push images
-make push tag=latest dockerfile=Dockerfile.api
+make push_api ACCOUNT=your-github-username TAG=v1.0.0
+make push_worker ACCOUNT=your-github-username TAG=v1.0.0
 
-# Run with Docker Compose
-docker-compose up -d
-
-# View logs
-make api_logs
+# Or do everything at once
+make push_all ACCOUNT=your-github-username TAG=v1.0.0
 ```
+
+### Configuration
+
+Configure the application using environment variables:
+
+#### API Service
+- `FLASK_ENV`: Set to `development` or `production`
+- `LOG_LEVEL`: Logging level (default: "INFO" in production, "DEBUG" in development)
+- `RABBITMQ_HOST`: RabbitMQ hostname (default: "rabbitmq")
+- `RABBITMQ_PASS`: RabbitMQ password (default: "guest")
+- `RABBITMQ_USER`: RabbitMQ username (default: "guest")
+- `RABBITMQ_VHOST`: RabbitMQ virtual host (default: "/")
+- `SECRET_KEY`: Secret key for Flask (required in production)
+
+#### Worker Service
+- `DEBUG`: Enable debug logging (1 for enabled, 0 for disabled, default: 0)
+- `MOVIE_PATH`: Path to movie files on your system (default: "/data/media/movies")
+- `RABBITMQ_HOST`: RabbitMQ hostname (default: "rabbitmq")
+- `RABBITMQ_PASS`: RabbitMQ password (default: "guest")
+- `RABBITMQ_USER`: RabbitMQ username (default: "guest")
+- `STANDUP_PATH`: Path to stand-up comedy files (default: "/data/media/stand-up")
+- `TEMP_DIR`: Directory for temporary files (default: "/data/tmp")
+- `WORKER_ENV`: Worker environment (default: "development")
 
 ## Code Standards
 
-- **Python Version**: 3.12+
-- **Linting**: Using Ruff for linting and formatting
-- **Type Checking**: Using MyPy for static type checking
-- **Testing**: Using pytest for testing
+- **Python Version**: 3.13+
+- **Linting**: Ruff for linting and formatting
+- **Type Checking**: MyPy for static type checking
+- **Testing**: pytest for testing
 
 ### Coding Guidelines
 
@@ -112,12 +153,17 @@ make api_logs
 - Follow PEP 8 naming conventions
 - Write meaningful docstrings for public functions and classes
 - Handle errors appropriately with specific exception catching
-- Use loguru for logging
 
 ## License
 
-[Add your license information here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
-[Add contribution guidelines here]
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
