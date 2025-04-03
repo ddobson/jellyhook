@@ -56,25 +56,25 @@ tag_api: TAG ?= latest
 tag_api:
 	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make tag_api ACCOUNT=your-docker-account TAG=version" && exit 1 )
 	@echo "Tagging API image for $(ACCOUNT)..."
-	docker tag jellyhook:$(TAG)-api $(ACCOUNT)/jellyhook:$(TAG)-api
+	docker tag jellyhook:$(TAG)-api ghcr.io/$(ACCOUNT)/jellyhook:$(TAG)-api
 
 tag_worker: TAG ?= latest
 tag_worker:
 	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make tag_worker ACCOUNT=your-docker-account TAG=version" && exit 1 )
 	@echo "Tagging Worker image for $(ACCOUNT)..."
-	docker tag jellyhook:$(TAG)-worker $(ACCOUNT)/jellyhook:$(TAG)-worker
+	docker tag jellyhook:$(TAG)-worker ghcr.io/$(ACCOUNT)/jellyhook:$(TAG)-worker
 
 push_api: TAG ?= latest
 push_api: build_api tag_api
 	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make push_api ACCOUNT=your-docker-account TAG=version" && exit 1 )
 	@echo "Pushing API image to $(ACCOUNT)/jellyhook:$(TAG)-api..."
-	docker push $(ACCOUNT)/jellyhook:$(TAG)-api
+	docker push ghcr.io/$(ACCOUNT)/jellyhook:$(TAG)-api
 
 push_worker: TAG ?= latest
 push_worker: build_worker tag_worker
 	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make push_worker ACCOUNT=your-docker-account TAG=version" && exit 1 )
 	@echo "Pushing Worker image to $(ACCOUNT)/jellyhook:$(TAG)-worker..."
-	docker push $(ACCOUNT)/jellyhook:$(TAG)-worker
+	docker push ghcr.io/$(ACCOUNT)/jellyhook:$(TAG)-worker
 
 # Convenience target to build and push both
 push_all: push_api push_worker
