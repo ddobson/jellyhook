@@ -1,4 +1,5 @@
 import pathlib
+import shlex
 import subprocess
 import time
 from collections.abc import Callable
@@ -39,6 +40,10 @@ def run_command(
 ) -> subprocess.CompletedProcess:
     """Execute a subprocess commands.
 
+    This function runs a command in a subprocess and captures its output.
+    It will sanitize command line arguments to prevent shell injection attacks.
+    It can log the output and error streams to a logger if specified.
+
     Args:
         cmd (str): The command to execute.
         log_output (bool, optional): Stream stdout to logger. Defaults to False.
@@ -61,9 +66,9 @@ def run_command(
         "universal_newlines": True,
     }
     opts.update(kwargs)
-    cmd = input(cmd).split()
+    safe_cmd = shlex.split(cmd)
 
-    process = subprocess.Popen(cmd, **opts)
+    process = subprocess.Popen(safe_cmd, **opts)
 
     # Simultaneously read stdout and stderr
     stdout_lines = []
