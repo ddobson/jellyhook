@@ -2,11 +2,10 @@ name: Code Quality
 
 on:
   push:
-    branches: ['**']
+    branches: ["main"]
   pull_request:
     branches:
-      - 'main'
-
+      - "main"
 jobs:
   lint-and-test:
     name: Lint and Test
