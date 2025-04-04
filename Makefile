@@ -43,46 +43,52 @@ all: format lint typecheck test
 build_api: DOCKERFILE ?= api/Dockerfile
 build_api: TAG ?= latest
 build_api:
-	@echo "Building API image jellyhook:$(TAG)-api..."
+	@echo "Building API image jellyhook-api:$(TAG)..."
 	docker buildx build \
 		--no-cache \
-		--platform linux/amd64,linux/arm64 \
-		--tag jellyhook:$(TAG)-api \
+		--platform linux/amd64 \
+		--tag jellyhook-api:$(TAG) \
+		--load \
 		--file $(DOCKERFILE) ./api
 
 build_worker: DOCKERFILE ?= workers/Dockerfile
 build_worker: TAG ?= latest
 build_worker:
-	@echo "Building Worker image jellyhook:$(TAG)-worker..."
+	@echo "Building Worker image jellyhook-worker:$(TAG)..."
 	docker buildx build \
 		--no-cache \
-		--platform linux/amd64,linux/arm64 \
-		--tag jellyhook:$(TAG)-worker \
+		--platform linux/amd64 \
+		--tag jellyhook-worker:$(TAG) \
+		--load \
 		--file $(DOCKERFILE) ./workers
 
 tag_api: TAG ?= latest
+tag_api: REGISTRY ?= ghcr.io
 tag_api:
-	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make tag_api ACCOUNT=your-docker-account TAG=version" && exit 1 )
-	@echo "Tagging API image for $(ACCOUNT)..."
-	docker tag jellyhook:$(TAG)-api $(ACCOUNT)/jellyhook:$(TAG)-api
+	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make tag_api ACCOUNT=your-account [REGISTRY=registry-url] [TAG=version]" && exit 1 )
+	@echo "Tagging API image for $(REGISTRY)/$(ACCOUNT)..."
+	docker tag jellyhook-api:$(TAG) $(REGISTRY)/$(ACCOUNT)/jellyhook-api:$(TAG)
 
 tag_worker: TAG ?= latest
+tag_worker: REGISTRY ?= ghcr.io
 tag_worker:
-	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make tag_worker ACCOUNT=your-docker-account TAG=version" && exit 1 )
-	@echo "Tagging Worker image for $(ACCOUNT)..."
-	docker tag jellyhook:$(TAG)-worker $(ACCOUNT)/jellyhook:$(TAG)-worker
+	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make tag_worker ACCOUNT=your-account [REGISTRY=registry-url] [TAG=version]" && exit 1 )
+	@echo "Tagging Worker image for $(REGISTRY)/$(ACCOUNT)..."
+	docker tag jellyhook-worker:$(TAG) $(REGISTRY)/$(ACCOUNT)/jellyhook-worker:$(TAG)
 
 push_api: TAG ?= latest
+push_api: REGISTRY ?= ghcr.io
 push_api: build_api tag_api
-	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make push_api ACCOUNT=your-docker-account TAG=version" && exit 1 )
-	@echo "Pushing API image to $(ACCOUNT)/jellyhook:$(TAG)-api..."
-	docker push $(ACCOUNT)/jellyhook:$(TAG)-api
+	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make push_api ACCOUNT=your-account [REGISTRY=registry-url] [TAG=version]" && exit 1 )
+	@echo "Pushing API image to $(REGISTRY)/$(ACCOUNT)/jellyhook-api:$(TAG)..."
+	docker push $(REGISTRY)/$(ACCOUNT)/jellyhook-api:$(TAG)
 
 push_worker: TAG ?= latest
+push_worker: REGISTRY ?= ghcr.io
 push_worker: build_worker tag_worker
-	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make push_worker ACCOUNT=your-docker-account TAG=version" && exit 1 )
-	@echo "Pushing Worker image to $(ACCOUNT)/jellyhook:$(TAG)-worker..."
-	docker push $(ACCOUNT)/jellyhook:$(TAG)-worker
+	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make push_worker ACCOUNT=your-account [REGISTRY=registry-url] [TAG=version]" && exit 1 )
+	@echo "Pushing Worker image to $(REGISTRY)/$(ACCOUNT)/jellyhook-worker:$(TAG)..."
+	docker push $(REGISTRY)/$(ACCOUNT)/jellyhook-worker:$(TAG)
 
 # Convenience target to build and push both
 push_all: push_api push_worker
