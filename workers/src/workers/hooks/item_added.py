@@ -9,7 +9,7 @@ import pika.spec
 
 from workers import utils
 from workers.logger import logger
-from workers.services import dovi_conversion
+from workers.services import dovi_conversion, genre_modification
 
 
 @utils.timer
@@ -30,9 +30,18 @@ def item_added(
     message = json.loads(body)
     completed = False
 
+    # First, try to modify genres for stand-up media
     try:
-        service = dovi_conversion.DoviConversionService.from_message(message)
-        service.exec()
+        genre_service = genre_modification.GenreModificationService.from_message(message)
+        genre_service.exec()
+    except Exception as e:
+        logger.error(f"Genre modification failed: {e}")
+        # Don't fail the entire process if genre modification fails
+
+    # Then, try Dolby Vision conversion as before
+    try:
+        dovi_service = dovi_conversion.DoviConversionService.from_message(message)
+        dovi_service.exec()
         completed = True
     except Exception as e:
         if isinstance(e, subprocess.CalledProcessError):
@@ -40,8 +49,8 @@ def item_added(
         logger.error(e)
     finally:
         try:
-            logger.info(f"Cleaning temporary files for '{service.tmp_dir}'...")
-            utils.clean_dir(service.tmp_dir)
+            logger.info(f"Cleaning temporary files for '{dovi_service.tmp_dir}'...")
+            utils.clean_dir(dovi_service.tmp_dir)
         except (NameError, FileNotFoundError):
             pass
 
