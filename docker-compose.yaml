@@ -29,7 +29,7 @@ services:
     environment:
       FLASK_APP: api/main.py
       FLASK_ENV: development
-      SECRET_KEY: "8c479385d36a35da658cc99b8be82e54b94fa3c0d4e5d9f8"
+      SECRET_KEY: "SuperSecretKey"
     command: flask --app api.main --debug run --host=0.0.0.0 --port=5001
 
   worker:
