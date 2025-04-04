@@ -37,6 +37,9 @@ test:
 		cd $${dir} && uv run pytest && cd ..; \
 	done
 
+scan:
+	ggshield secret scan repo .
+
 all: format lint typecheck test
 
 # Docker commands
