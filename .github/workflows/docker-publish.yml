@@ -39,13 +39,23 @@ jobs:
             echo "VERSION=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
           else
             SHA=$(git rev-parse --short HEAD)
-            echo "VERSION=sha-${SHA}" >> $GITHUB_OUTPUT
+            echo "VERSION=${SHA}" >> $GITHUB_OUTPUT
           fi
       
       - name: Build and push API image
-        run: |
-          make push_api ACCOUNT=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} TAG=${{ steps.meta.outputs.VERSION }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api
+          file: ./api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/jellyhook-api:${{ steps.meta.outputs.VERSION }}
       
       - name: Build and push Worker image
-        run: |
-          make push_worker ACCOUNT=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }} TAG=${{ steps.meta.outputs.VERSION }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ./workers
+          file: ./workers/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/jellyhook-worker:${{ steps.meta.outputs.VERSION }}
