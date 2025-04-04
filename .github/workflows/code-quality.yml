@@ -6,6 +6,7 @@ on:
   pull_request:
     branches:
       - "main"
+
 jobs:
   lint-and-test:
     name: Lint and Test
@@ -13,31 +14,31 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      
+
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      
+
       - name: Install dependencies from lock files
         run: |
           uv --directory api sync
           uv --directory workers sync
-      
+
       - name: Run linting
         run: make lint
-      
+
       - name: Check formatting
         run: make format-check
-      
+
       - name: Run type checking
         run: make typecheck
         continue-on-error: true  # Based on comment in README about type compliance
-      
+
       - name: Run tests
         run: make test
