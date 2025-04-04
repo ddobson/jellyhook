@@ -28,8 +28,8 @@ jobs:
       
       - name: Install dependencies from lock files
         run: |
-          cd api && uv pip install -e . --requirements uv.lock && cd ..
-          cd workers && uv pip install -e . --requirements uv.lock && cd ..
+          uv --directory api sync
+          uv --directory workers sync
       
       - name: Run linting
         run: make lint
