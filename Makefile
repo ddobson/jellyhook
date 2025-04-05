@@ -19,7 +19,7 @@ format-check:
 	@echo "Checking formatting for api and workers directories..."
 	@for dir in api workers; do \
 		echo "Checking format for $${dir}..."; \
-		cd $${dir} && uv run ruff --active check --select I --config ../ruff.toml . && \
+		cd $${dir} && uv run --active ruff check --select I --config ../ruff.toml . && \
 		uv run --active ruff format --check --config ../ruff.toml . && cd ..; \
 	done
 
