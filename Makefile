@@ -37,6 +37,14 @@ test:
 		cd $${dir} && uv run --active pytest && cd ..; \
 	done
 
+test_cov: REPORT ?= html
+test_cov:
+	@echo "Running tests for api and workers directories..."
+	@for dir in api workers; do \
+		echo "Testing $${dir}..."; \
+		cd $${dir} && uv run --active pytest --cov --cov-branch --cov-report=$(REPORT) && cd ..; \
+	done
+
 scan:
 	ggshield secret scan repo .
 
