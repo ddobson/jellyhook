@@ -1,15 +1,13 @@
+import json
 import pathlib
 import shlex
 import subprocess
 import time
 from collections.abc import Callable
 
-from workers.config import MOVIE_PATH, STANDUP_PATH
+import yaml
+
 from workers.logger import logger
-
-
-class WebhookWorkerError(Exception):
-    """Exception raised for errors in the WebhookWorker."""
 
 
 def timer(func: Callable) -> Callable:
@@ -148,42 +146,29 @@ def ack_message(channel, delivery_tag: int, completed: bool) -> None:
     logger.info(f"Acknowledged message with delivery tag: {delivery_tag}")
 
 
-def file_from_message(message: dict) -> pathlib.Path:
-    """Get the path to the file from a Jellyfin item_added webhook message.
+def load_config_file(filename: str, default: dict | None = None) -> dict:
+    """Load a JSON or YAML configuration file.
 
     Args:
-        message (dict): The Jellyfin webhook message containing 'Name' and 'Year' keys.
+        filename (str): The path to the configuration file.
+        default (dict, None): Default value if file doesn't exist. Defaults to None.
 
     Returns:
-        pathlib.Path: The path to the file.
-
-    Raises:
-        WebhookWorkerError: If no file is found or multiple files are found.
+        dict: The loaded configuration data.
     """
-    base_dirs = [MOVIE_PATH, STANDUP_PATH]
-    file_types = [".mkv", ".mp4", ".avi"]
-    search_result = []
+    if not default:
+        default = {}
 
-    for base_dir in base_dirs:
-        dirname = f"{base_dir}/{message['Name']} ({message['Year']})".replace(":", " -")
-        obj_dir = pathlib.Path(dirname)
+    try:
+        config_path = pathlib.Path(filename)
+        if not config_path.exists():
+            return default
 
-        if not obj_dir.exists():
-            continue
+        with open(config_path, "r") as f:
+            if config_path.suffix.lower() in [".yml", ".yaml"]:
+                return yaml.safe_load(f)
+            return json.load(f)
 
-        patterns = [f"{message['Name'].replace(':', '')}*{file_type}" for file_type in file_types]
-        files_found = [result for pattern in patterns for result in obj_dir.glob(pattern)]
-
-        if files_found:
-            search_result = files_found
-            break
-
-    if not search_result:
-        err_msg = f"No video found for '{message['Name']}'"
-        raise WebhookWorkerError(err_msg)
-
-    if len(search_result) != 1:
-        err_msg = f"Found more than one video for '{message['Name']}'"
-        raise WebhookWorkerError(err_msg)
-
-    return search_result[0]
+    except (json.JSONDecodeError, yaml.YAMLError, IOError) as e:
+        logger.info(f"Error loading config file {filename}: {e}")
+        return default

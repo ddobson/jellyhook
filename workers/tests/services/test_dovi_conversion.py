@@ -4,9 +4,9 @@ from unittest import mock
 
 import pytest
 
+from workers.errors import WebhookWorkerError
 from workers.movie import Movie
 from workers.services.dovi_conversion import DoviConversionService
-from workers.utils import WebhookWorkerError
 
 
 @pytest.fixture
@@ -162,10 +162,12 @@ def test_from_message_success():
     message = {"Name": "Test Movie", "Year": "2023"}
 
     with (
-        mock.patch("workers.utils.file_from_message") as mock_file_from_message,
         mock.patch("workers.movie.Movie.from_file") as mock_from_file,
         mock.patch("pathlib.Path") as mock_path,
         mock.patch("workers.services.dovi_conversion.TEMP_DIR", "/data/tmp"),
+        mock.patch(
+            "workers.services.dovi_conversion.DoviConversionService.file_from_message"
+        ) as mock_file_from_message,
     ):
         # Setup the mock file result
         mock_file = mock.MagicMock()

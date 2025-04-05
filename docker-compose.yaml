@@ -44,6 +44,7 @@ services:
     volumes:
       - ./workers:/app
       - /Volumes/data:/data
+      - /Volumes/appdata/jellyhook:/config
     networks:
       - jellyhook
     depends_on:
@@ -51,7 +52,11 @@ services:
     environment:
       DEBUG: "1"
       MOVIE_PATH: "/data/media/movies"
+      STANDUP_PATH: "/data/media/stand-up"
       TEMP_DIR: "/data/tmp"
       RABBITMQ_HOST: rabbitmq
       WORKER_ENV: development
       PYDEVD_DISABLE_FILE_VALIDATION: "0"
+      JELLYFIN_API_KEY: ""  # Add your Jellyfin API key here
+      JELLYFIN_PORT: "8096"  # Default Jellyfin port
+      GENRE_CONFIG_PATH: "/config/genre_mappings.json"

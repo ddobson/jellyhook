@@ -4,17 +4,19 @@ import pathlib
 
 from workers import utils
 from workers.config import TEMP_DIR
+from workers.errors import WebhookWorkerError
 from workers.logger import logger
 from workers.movie import Movie
+from workers.services.service_base import ServiceBase
 
 DOVI_PROFLE_7 = 7
 
 
-class DoviConversionError(utils.WebhookWorkerError):
+class DoviConversionError(WebhookWorkerError):
     """Exception raised for errors in the DoviConversionService."""
 
 
-class DoviConversionService:
+class DoviConversionService(ServiceBase):
     """Service to convert Dolby Vision Profile 7.x to 8.x."""
 
     def __init__(self, movie: Movie, tmp_dir: pathlib.Path) -> None:
@@ -215,7 +217,7 @@ class DoviConversionService:
         Returns:
             DoviConversionService: The initialized DoviConversionService.
         """
-        movie_file = utils.file_from_message(message)
+        movie_file = cls.file_from_message(message)
         movie = Movie.from_file(movie_file)
         tmp_dir = pathlib.Path(f"{TEMP_DIR}/{movie.folder_title}")
         tmp_dir.mkdir(exist_ok=True)

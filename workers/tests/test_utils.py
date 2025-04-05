@@ -1,89 +1,259 @@
-import os
+import json
 import pathlib
+import subprocess
 from unittest import mock
 
 import pytest
+import yaml
 
-from workers.utils import WebhookWorkerError, file_from_message
-
-
-def test_file_from_message_finds_movie(media_dir):
-    """Test finding a movie file from a message."""
-    with (
-        mock.patch("workers.utils.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.utils.STANDUP_PATH", media_dir["standup_path"]),
-    ):
-        message = {"Name": "Test Movie", "Year": "2023"}
-        result = file_from_message(message)
-
-        assert isinstance(result, pathlib.Path)
-        assert str(result) == media_dir["movie_file"]
+from workers import utils
+from workers.logger import logger
 
 
-def test_file_from_message_finds_standup(media_dir):
-    """Test finding a standup file from a message."""
-    with (
-        mock.patch("workers.utils.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.utils.STANDUP_PATH", media_dir["standup_path"]),
-    ):
-        message = {"Name": "Comedy Special", "Year": "2022"}
-        result = file_from_message(message)
+@mock.patch("time.time")
+def test_timer_decorator_calculates_elapsed_time(mock_time):
+    mock_time.side_effect = [100.0, 105.0]  # Start and end times
 
-        assert isinstance(result, pathlib.Path)
-        assert str(result) == media_dir["standup_file"]
+    @utils.timer
+    def test_func():
+        return "result"
 
+    with mock.patch.object(logger, "info") as mock_logger:
+        result = test_func()
 
-def test_file_from_message_with_colon_in_name(media_dir, tmpdir):
-    """Test finding a file with a colon in the name."""
-    # Setup a movie with a colon in the name
-    movie_dir = pathlib.Path(media_dir["movie_path"])
-    colon_movie_dir = movie_dir / "Movie - Subtitle (2024)"  # Directory name with colon replaced
-    os.makedirs(colon_movie_dir, exist_ok=True)
-
-    colon_movie_file = colon_movie_dir / "Movie Subtitle.mkv"  # File name with colon removed
-    with open(colon_movie_file, "w") as f:
-        f.write("movie with colon content")
-
-    with (
-        mock.patch("workers.utils.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.utils.STANDUP_PATH", media_dir["standup_path"]),
-    ):
-        message = {"Name": "Movie: Subtitle", "Year": "2024"}
-        result = file_from_message(message)
-
-        assert isinstance(result, pathlib.Path)
-        assert str(result) == str(colon_movie_file)
+    assert result == "result"
+    mock_logger.assert_called_once_with("test_func took 5.0 seconds")
+    assert mock_time.call_count == 2
 
 
-def test_file_from_message_no_file_found(media_dir):
-    """Test error when no file is found."""
-    with (
-        mock.patch("workers.utils.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.utils.STANDUP_PATH", media_dir["standup_path"]),
-    ):
-        message = {"Name": "Non Existent Movie", "Year": "2023"}
+@mock.patch("time.time")
+def test_timer_decorator_with_args(mock_time):
+    mock_time.side_effect = [100.0, 107.0]  # Start and end times
 
-        with pytest.raises(WebhookWorkerError) as exc_info:
-            file_from_message(message)
+    @utils.timer
+    def test_func(arg1, arg2, kwarg1=None):
+        return f"{arg1}-{arg2}-{kwarg1}"
 
-        assert "No video found for 'Non Existent Movie'" in str(exc_info.value)
+    with mock.patch.object(logger, "info") as mock_logger:
+        result = test_func("a", "b", kwarg1="c")
+
+    assert result == "a-b-c"
+    mock_logger.assert_called_once_with("test_func took 7.0 seconds")
 
 
-def test_file_from_message_multiple_files_found(media_dir, tmpdir):
-    """Test error when multiple files are found."""
-    # Add a second movie file to the same directory
-    movie_folder = pathlib.Path(media_dir["movie_file"]).parent
-    second_file = movie_folder / "Test Movie.mp4"
-    with open(second_file, "w") as f:
-        f.write("second movie file content")
+def test_run_command_success(tmp_path):
+    # Create a test script that succeeds
+    script_path = tmp_path / "test_script.sh"
+    script_path.write_text("#!/bin/bash\necho 'Success!'\nexit 0\n")
+    script_path.chmod(0o755)
+
+    result = utils.run_command(f"{script_path}")
+
+    assert result.returncode == 0
+    assert "Success!" in result.stdout
+    assert result.stderr == ""
+
+
+def test_run_command_failure(tmp_path):
+    # Create a test script that fails
+    script_path = tmp_path / "test_fail.sh"
+    script_path.write_text("#!/bin/bash\necho 'Error message' >&2\nexit 1\n")
+    script_path.chmod(0o755)
+
+    with pytest.raises(subprocess.CalledProcessError) as excinfo:
+        utils.run_command(f"{script_path}")
+
+    assert excinfo.value.returncode == 1
+    assert "Error message" in excinfo.value.stderr
+
+
+def test_run_command_logs_output_when_requested(tmp_path):
+    # Create a test script with output
+    script_path = tmp_path / "test_log.sh"
+    script_path.write_text("#!/bin/bash\necho 'Standard output'\necho 'Error output' >&2\nexit 0\n")
+    script_path.chmod(0o755)
 
     with (
-        mock.patch("workers.utils.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.utils.STANDUP_PATH", media_dir["standup_path"]),
+        mock.patch.object(logger, "info") as mock_info,
+        mock.patch.object(logger, "error") as mock_error,
     ):
-        message = {"Name": "Test Movie", "Year": "2023"}
+        utils.run_command(f"{script_path}", log_output=True, log_err=True)
 
-        with pytest.raises(WebhookWorkerError) as exc_info:
-            file_from_message(message)
+    mock_info.assert_called_with("Standard output")
+    mock_error.assert_called_with("Error output")
 
-        assert "Found more than one video for 'Test Movie'" in str(exc_info.value)
+
+def test_clean_dir_empty(tmp_path):
+    """Test clean_dir on an empty directory."""
+    # Create a directory structure
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+
+    utils.clean_dir(empty_dir)
+
+    # Directory should be removed
+    assert not empty_dir.exists()
+
+
+def test_clean_dir_with_files(tmp_path):
+    """Test clean_dir on a directory with files."""
+    # Create a directory with files
+    test_dir = tmp_path / "test_dir"
+    test_dir.mkdir()
+    (test_dir / "file1.txt").write_text("content1")
+    (test_dir / "file2.txt").write_text("content2")
+
+    utils.clean_dir(test_dir)
+
+    # Directory should be removed
+    assert not test_dir.exists()
+
+
+def test_clean_dir_with_subdirs(tmp_path):
+    """Test clean_dir on a directory with subdirectories."""
+    # Create a nested directory structure
+    test_dir = tmp_path / "test_dir"
+    test_dir.mkdir()
+    subdir1 = test_dir / "subdir1"
+    subdir1.mkdir()
+    (subdir1 / "file1.txt").write_text("content1")
+    subdir2 = test_dir / "subdir2"
+    subdir2.mkdir()
+    (subdir2 / "file2.txt").write_text("content2")
+
+    utils.clean_dir(test_dir)
+
+    # Directory should be removed
+    assert not test_dir.exists()
+    assert not subdir1.exists()
+    assert not subdir2.exists()
+
+
+def test_clean_dir_nonexistent():
+    """Test clean_dir on a nonexistent directory."""
+    with pytest.raises(FileNotFoundError):
+        utils.clean_dir(pathlib.Path("/nonexistent/directory"))
+
+
+def test_ack_message_acknowledged():
+    """Test that ack_message calls basic_ack when completed is True."""
+    mock_channel = mock.MagicMock()
+    mock_channel.is_open = True
+
+    with mock.patch.object(logger, "info") as mock_info:
+        utils.ack_message(mock_channel, 123, True)
+
+    mock_channel.basic_ack.assert_called_once_with(123)
+    mock_channel.basic_nack.assert_not_called()
+    mock_info.assert_called_once_with("Acknowledged message with delivery tag: 123")
+
+
+def test_ack_message_negative_acknowledged():
+    """Test that ack_message calls basic_nack when completed is False."""
+    mock_channel = mock.MagicMock()
+    mock_channel.is_open = True
+
+    with mock.patch.object(logger, "info") as mock_info:
+        utils.ack_message(mock_channel, 456, False)
+
+    mock_channel.basic_nack.assert_called_once_with(456, requeue=False)
+    mock_channel.basic_ack.assert_not_called()
+    mock_info.assert_called_once_with("Acknowledged message with delivery tag: 456")
+
+
+def test_ack_message_channel_closed():
+    """Test that ack_message logs but does not call ack/nack when channel is closed."""
+    mock_channel = mock.MagicMock()
+    mock_channel.is_open = False
+
+    with mock.patch.object(logger, "info") as mock_info:
+        utils.ack_message(mock_channel, 789, True)
+
+    mock_channel.basic_ack.assert_not_called()
+    mock_channel.basic_nack.assert_not_called()
+    mock_info.assert_any_call(
+        "Unable to acknowledge message with delivery tag: 789. Connection closed."
+    )
+
+
+def test_load_config_file_json(tmp_path):
+    """Test loading a JSON config file."""
+    # Create a test JSON file
+    config_data = {"key1": "value1", "key2": 2}
+    config_file = tmp_path / "config.json"
+    with open(config_file, "w") as f:
+        json.dump(config_data, f)
+
+    # Load the config
+    result = utils.load_config_file(str(config_file))
+
+    # Check the result
+    assert result == config_data
+
+
+def test_load_config_file_yaml(tmp_path):
+    """Test loading a YAML config file."""
+    # Create a test YAML file
+    config_data = {"key1": "value1", "key2": 2, "nested": {"subkey": "subvalue"}}
+    config_file = tmp_path / "config.yaml"
+    with open(config_file, "w") as f:
+        yaml.dump(config_data, f)
+
+    # Load the config
+    result = utils.load_config_file(str(config_file))
+
+    # Check the result
+    assert result == config_data
+
+
+def test_load_config_file_nonexistent():
+    """Test loading a nonexistent config file."""
+    default_config = {"default": "config"}
+    result = utils.load_config_file("/nonexistent/config.json", default=default_config)
+    assert result == default_config
+
+
+def test_load_config_file_invalid_json(tmp_path):
+    """Test loading an invalid JSON file."""
+    # Create an invalid JSON file
+    config_file = tmp_path / "invalid.json"
+    with open(config_file, "w") as f:
+        f.write("This is not valid JSON")
+
+    # Load with default
+    default_config = {"default": "config"}
+    with mock.patch.object(logger, "info") as mock_info:
+        result = utils.load_config_file(str(config_file), default=default_config)
+
+    # Check the result and log
+    assert result == default_config
+    assert mock_info.call_count == 1
+    assert "Error loading config file" in mock_info.call_args[0][0]
+
+
+@mock.patch("yaml.safe_load")
+def test_load_config_file_invalid_yaml(mock_yaml_load, tmp_path):
+    """Test loading an invalid YAML file."""
+    # Create a YAML file
+    config_file = tmp_path / "invalid.yaml"
+    with open(config_file, "w") as f:
+        f.write("key1: value1\n  invalid indentation")
+
+    # Mock YAML load to raise an exception
+    mock_yaml_load.side_effect = yaml.YAMLError("YAML parsing error")
+
+    # Load with default
+    default_config = {"default": "config"}
+    with mock.patch.object(logger, "info") as mock_info:
+        result = utils.load_config_file(str(config_file), default=default_config)
+
+    # Check the result and log
+    assert result == default_config
+    assert mock_info.call_count == 1
+    assert "Error loading config file" in mock_info.call_args[0][0]
+
+
+def test_load_config_file_default_none():
+    """Test loading a nonexistent file with default=None."""
+    result = utils.load_config_file("/nonexistent/config.json", default=None)
+    assert result == {}
