@@ -4,37 +4,37 @@ lint:
 	@echo "Running linting for api and workers directories..."
 	@for dir in api workers; do \
 		echo "Linting $${dir}..."; \
-		cd $${dir} && uv run ruff check --config ../ruff.toml . && cd ..; \
+		cd $${dir} && uv run --active ruff check --config ../ruff.toml . && cd ..; \
 	done
 
 format:
 	@echo "Formatting api and workers directories..."
 	@for dir in api workers; do \
 		echo "Formatting $${dir}..."; \
-		cd $${dir} && uv run ruff check --select I --fix --config ../ruff.toml . && \
-		uv run ruff format --config ../ruff.toml . && cd ..; \
+		cd $${dir} && uv run --active ruff check --select I --fix --config ../ruff.toml . && \
+		uv run --active ruff format --config ../ruff.toml . && cd ..; \
 	done
 
 format-check:
 	@echo "Checking formatting for api and workers directories..."
 	@for dir in api workers; do \
 		echo "Checking format for $${dir}..."; \
-		cd $${dir} && uv run ruff check --select I --config ../ruff.toml . && \
-		uv run ruff format --check --config ../ruff.toml . && cd ..; \
+		cd $${dir} && uv run ruff --active check --select I --config ../ruff.toml . && \
+		uv run --active ruff format --check --config ../ruff.toml . && cd ..; \
 	done
 
 typecheck:
 	@echo "Type checking api and workers directories..."
 	@for dir in api workers; do \
 		echo "Type checking $${dir}..."; \
-		(cd "$${dir}" && uv run mypy --config-file=../mypy.ini . || true); \
+		(cd "$${dir}" && uv run --active mypy --config-file=../mypy.ini . || true); \
 	done
 
 test:
 	@echo "Running tests for api and workers directories..."
 	@for dir in api workers; do \
 		echo "Testing $${dir}..."; \
-		cd $${dir} && uv run pytest && cd ..; \
+		cd $${dir} && uv run --active pytest && cd ..; \
 	done
 
 scan:

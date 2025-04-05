@@ -44,6 +44,7 @@ services:
     volumes:
       - ./workers:/app
       - /Volumes/data:/data
+      - /Volumes/appdata/jellyhook:/config
     networks:
       - jellyhook
     depends_on:
@@ -58,3 +59,4 @@ services:
       PYDEVD_DISABLE_FILE_VALIDATION: "0"
       JELLYFIN_API_KEY: ""  # Add your Jellyfin API key here
       JELLYFIN_PORT: "8096"  # Default Jellyfin port
+      GENRE_CONFIG_PATH: "/config/genre_mappings.json"

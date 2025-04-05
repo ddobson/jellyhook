@@ -1,0 +1,42 @@
+{
+  "paths": [
+    {
+      "path": "/data/media/stand-up",
+      "genres": ["Stand-Up"],
+      "replace_existing": true
+    },
+    {
+      "path": "/data/media/documentaries",
+      "genres": ["Documentary"],
+      "replace_existing": true
+    },
+    {
+      "path": "/data/media/anime",
+      "genres": ["Anime", "Animation"],
+      "replace_existing": false
+    }
+  ],
+  "rules": [
+    {
+      "match_pattern": ".*(concert|live performance).*",
+      "match_field": "Name",
+      "case_insensitive": true,
+      "genres": ["Concert", "Music"],
+      "replace_existing": false
+    },
+    {
+      "match_pattern": ".*workout.*|.*fitness.*",
+      "match_field": "Overview",
+      "case_insensitive": true,
+      "genres": ["Fitness", "Educational"],
+      "replace_existing": true
+    },
+    {
+      "match_pattern": "^Kids.*",
+      "match_field": "Name",
+      "case_insensitive": false,
+      "genres": ["Kids"],
+      "replace_existing": false
+    }
+  ]
+}
