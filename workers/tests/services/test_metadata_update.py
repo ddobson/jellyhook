@@ -1,6 +1,9 @@
 from unittest import mock
 
-from workers.services.metadata_update import MetadataUpdateService
+import pytest
+from jellyfin_apiclient_python.exceptions import HTTPException
+
+from workers.services.metadata_update import MetadataUpdateError, MetadataUpdateService
 
 
 @mock.patch("workers.clients.jellyfin.client")
@@ -348,6 +351,31 @@ def test_update_metadata_no_changes_needed(mock_client, mock_movie_standup):
 
     # Assert
     mock_client.update_item.assert_not_called()
+
+    @mock.patch("workers.clients.jellyfin.client.jellyfin")
+    def test_update_metadata_jellyfin_error(mock_client, mock_movie_standup):
+        # Setup
+        service = MetadataUpdateService(
+            movie=mock_movie_standup,
+            item_id="123456",
+            original_genres=["Comedy"],
+        )
+        service.matching_rules = [
+            {"genres": {"new_genres": ["Stand-Up"], "replace_existing": True}}
+        ]
+
+        # Configure mock to raise HTTPException
+        mock_client.update_item.side_effect = HTTPException("API Error")
+
+        # Execute and Assert
+        with pytest.raises(MetadataUpdateError) as exc_info:
+            service.update_metadata()
+
+        assert "Failed to update metadata for 'Bobby Guy (2023)'" in str(exc_info.value)
+        mock_client.update_item.assert_called_once_with(
+            "123456",
+            {"Genres": ["Stand-Up"]},
+        )
 
 
 @mock.patch.object(MetadataUpdateService, "find_matching_rules")
