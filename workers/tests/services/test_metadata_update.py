@@ -241,11 +241,7 @@ def test_calculate_new_genres_add_no_duplicates():
 
 def test_calculate_new_genres_multiple_rules():
     # Setup
-    service = MetadataUpdateService(
-        movie=None, 
-        item_id="123456", 
-        original_genres=["Comedy"]
-    )
+    service = MetadataUpdateService(movie=None, item_id="123456", original_genres=["Comedy"])
     service.matching_rules = [
         {"genres": {"new_genres": ["Stand-Up"], "replace_existing": False}},
         {"genres": {"new_genres": ["Live Performance"], "replace_existing": False}},
@@ -408,10 +404,7 @@ def test_exec_with_matching_rules(
         MetadataUpdateService, "matching_rules", [{"genres": {"new_genres": ["Stand-Up"]}}]
     )
 
-    service = MetadataUpdateService(
-        movie=mock_movie_standup, 
-        item_id="123456"
-    )
+    service = MetadataUpdateService(movie=mock_movie_standup, item_id="123456")
     service.matching_rules = [{"genres": {"new_genres": ["Stand-Up"]}}]
 
     # Execute
@@ -430,10 +423,7 @@ def test_exec_without_matching_rules(
     # Setup
     mock_find_matching_rules.return_value = None
 
-    service = MetadataUpdateService(
-        movie=mock_movie_standup, 
-        item_id="123456"
-    )
+    service = MetadataUpdateService(movie=mock_movie_standup, item_id="123456")
     service.matching_rules = []
 
     # Execute
