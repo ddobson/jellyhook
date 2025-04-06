@@ -2,7 +2,7 @@ import pathlib
 import re
 from typing import Any, Dict, List
 
-from workers.clients import jellyfin
+from workers.clients.jellyfin import client
 from workers.config import METADATA_RULES
 from workers.errors import WebhookWorkerError
 from workers.logger import logger
@@ -182,7 +182,7 @@ class MetadataUpdateService(ServiceBase):
         # Send request to Jellyfin API if there are changes to make
         if data:
             try:
-                jellyfin.client.update_item(self.item_id, data)
+                client.jellyfin.update_item(self.item_id, data)
                 logger.info(f"Successfully updated metadata for {self.movie.full_title}")
             except Exception as e:
                 logger.error(f"Failed to update metadata: {e}")

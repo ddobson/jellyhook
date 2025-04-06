@@ -305,7 +305,7 @@ def test_calculate_new_tags_add():
     assert sorted(new_tags) == sorted(["Netflix", "Special", "Comedy Special"])
 
 
-@mock.patch("workers.clients.jellyfin.client")
+@mock.patch("workers.clients.jellyfin.client.jellyfin")
 def test_update_metadata_with_genre_changes(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
@@ -325,7 +325,7 @@ def test_update_metadata_with_genre_changes(mock_client, mock_movie_standup):
     )
 
 
-@mock.patch("workers.clients.jellyfin.client")
+@mock.patch("workers.clients.jellyfin.client.jellyfin")
 def test_update_metadata_with_tag_changes(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
@@ -345,7 +345,7 @@ def test_update_metadata_with_tag_changes(mock_client, mock_movie_standup):
     )
 
 
-@mock.patch("workers.clients.jellyfin.client")
+@mock.patch("workers.clients.jellyfin.client.jellyfin")
 def test_update_metadata_with_both_changes(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
@@ -371,7 +371,7 @@ def test_update_metadata_with_both_changes(mock_client, mock_movie_standup):
     )
 
 
-@mock.patch("workers.clients.jellyfin.client")
+@mock.patch("workers.clients.jellyfin.client.jellyfin")
 def test_update_metadata_no_changes_needed(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
@@ -446,7 +446,7 @@ def test_exec_without_matching_rules(
         "rules": [],
     },
 )
-@mock.patch("workers.clients.jellyfin.client")
+@mock.patch("workers.clients.jellyfin.client.jellyfin")
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
 def test_end_to_end_standup_path(
@@ -485,7 +485,7 @@ def test_end_to_end_standup_path(
         ],
     },
 )
-@mock.patch("workers.clients.jellyfin.client")
+@mock.patch("workers.clients.jellyfin.client.jellyfin")
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
 def test_end_to_end_pattern_match(
