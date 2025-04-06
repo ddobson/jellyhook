@@ -1,5 +1,6 @@
 import pathlib
 import re
+import shlex
 
 
 class Movie:
@@ -51,8 +52,12 @@ class Movie:
 
     @property
     def escaped_path(self) -> str:
-        """Return the escaped full path."""
-        return re.escape(self.full_path)
+        """Return the escaped path of the movie file.
+
+        Returns:
+            str: The escaped path of the movie file.
+        """
+        return shlex.quote(self.full_path)
 
     @property
     def escaped_file_name(self) -> str:

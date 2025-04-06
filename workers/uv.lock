@@ -162,10 +162,26 @@ wheels = [
 ]
 
 [[package]]
+name = "jellyfin-apiclient-python"
+version = "1.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "requests" },
+    { name = "urllib3" },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c2/b0/61cacc2261f6b1972e4a53d142857def8b4d3b6fbd1481a2257b26e31029/jellyfin_apiclient_python-1.11.0.tar.gz", hash = "sha256:f5e3dc4ea06a80d26859a62ace7c3ab26f762063a3032f9109f4cea2ed8ac5de", size = 62581 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1f/f3/c5d2ba45e432ed706c705e961c8e2a01c5600f93265279e8d61c61f544ae/jellyfin_apiclient_python-1.11.0-py3-none-any.whl", hash = "sha256:b666c8d175b36f2ce9e6020c13821eb1aa104a585bfbba58f6790fa15f358b40", size = 51475 },
+]
+
+[[package]]
 name = "jellyhook-worker"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "jellyfin-apiclient-python" },
     { name = "loguru" },
     { name = "pika" },
     { name = "pyyaml" },
@@ -184,6 +200,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jellyfin-apiclient-python", specifier = ">=1.11.0" },
     { name = "loguru", specifier = ">=0.7.3,<1.0.0" },
     { name = "pika", specifier = ">=1.3.2,<2.0.0" },
     { name = "pyyaml", specifier = ">=6.0.2" },
@@ -473,6 +490,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6c/63/53559446a878410fc5a5974feb13d31d78d752eb18aeba59c7fef1af7598/wcwidth-0.2.13.tar.gz", hash = "sha256:72ea0c06399eb286d978fdedb6923a9eb47e1c486ce63e9b4e64fc18303972b5", size = 101301 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fd/84/fd2ba7aafacbad3c4201d395674fc6348826569da3c0937e75505ead3528/wcwidth-0.2.13-py2.py3-none-any.whl", hash = "sha256:3da69048e4540d84af32131829ff948f1e022c1c6bdb8d6102117aac784f6859", size = 34166 },
+]
+
+[[package]]
+name = "websocket-client"
+version = "1.8.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/30/fba0d96b4b5fbf5948ed3f4681f7da2f9f64512e1d303f94b4cc174c24a5/websocket_client-1.8.0.tar.gz", hash = "sha256:3239df9f44da632f96012472805d40a23281a991027ce11d2f45a6f24ac4c3da", size = 54648 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/84/44687a29792a70e111c5c477230a72c4b957d88d16141199bf9acb7537a3/websocket_client-1.8.0-py3-none-any.whl", hash = "sha256:17b44cc997f5c498e809b22cdf2d9c7a9e71c02c8cc2b6c56e7c2d1239bfa526", size = 58826 },
 ]
 
 [[package]]
