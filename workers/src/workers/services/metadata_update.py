@@ -2,6 +2,8 @@ import pathlib
 import re
 from typing import Any, Dict, List
 
+from jellyfin_apiclient_python.exceptions import HTTPException
+
 from workers.clients.jellyfin import client
 from workers.config import METADATA_RULES
 from workers.errors import WebhookWorkerError
@@ -184,7 +186,7 @@ class MetadataUpdateService(ServiceBase):
             try:
                 client.jellyfin.update_item(self.item_id, data)
                 logger.info(f"Successfully updated metadata for {self.movie.full_title}")
-            except Exception as e:
+            except HTTPException as e:
                 logger.error(f"Failed to update metadata: {e}")
                 raise MetadataUpdateError(
                     f"Failed to update metadata for '{self.movie.full_title}'"
