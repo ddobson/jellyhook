@@ -42,9 +42,17 @@ services:
     ports:
       - "5678:5678"
     volumes:
-      - ./workers:/app
-      - /Volumes/data:/data
-      - /Volumes/appdata/jellyhook:/config
+      - type: bind
+        source: ./workers
+        target: /app
+        read_only: true
+      - type: bind
+        source: /Volumes/appdata/jellyhook
+        target: /config
+      - type: bind
+        source: /Volumes/data
+        target: /data
+
     networks:
       - jellyhook
     depends_on:
@@ -62,5 +70,3 @@ services:
       JELLYFIN_HOST: "http://homelab.local"
       JELLYFIN_USER_ID: "" # Add your Jellyfin user ID here
       METADATA_CONFIG_PATH: "/config/metadata_config.json"
-    env_file:
-      - ./workers/.env
