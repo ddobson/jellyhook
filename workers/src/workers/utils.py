@@ -1,6 +1,5 @@
 import json
 import pathlib
-import shlex
 import subprocess
 import time
 from collections.abc import Callable
@@ -64,9 +63,8 @@ def run_command(
         "universal_newlines": True,
     }
     opts.update(kwargs)
-    safe_cmd = shlex.split(cmd)
 
-    process = subprocess.Popen(safe_cmd, **opts)
+    process = subprocess.Popen(cmd, **opts)  # Remove shlex.split, pass cmd directly
 
     # Simultaneously read stdout and stderr
     stdout_lines = []
