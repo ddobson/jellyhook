@@ -1,11 +1,9 @@
 import pathlib
 import re
 from typing import Any, Dict, List
-from urllib.parse import urljoin, urlparse, urlunparse
 
-import requests
-
-from workers.config import JELLYFIN_API_KEY, JELLYFIN_HOST, JELLYFIN_PORT, METADATA_RULES
+from workers.clients import jellyfin
+from workers.config import METADATA_RULES
 from workers.errors import WebhookWorkerError
 from workers.logger import logger
 from workers.movie import Movie
@@ -22,8 +20,6 @@ class MetadataUpdateService(ServiceBase):
     def __init__(
         self,
         movie: Movie,
-        jellyfin_url: str,
-        api_key: str,
         item_id: str,
         original_genres: List[str] = None,
         original_tags: List[str] = None,
@@ -33,8 +29,6 @@ class MetadataUpdateService(ServiceBase):
 
         Args:
             movie (Movie): The movie to modify metadata for.
-            jellyfin_url (str): The Jellyfin server URL.
-            api_key (str): The Jellyfin API key.
             item_id (str): The Jellyfin item ID.
             original_genres (List[str], optional): The original genres from the media.
             original_tags (List[str], optional): The original tags from the media.
@@ -44,8 +38,6 @@ class MetadataUpdateService(ServiceBase):
             None
         """
         self.movie = movie
-        self.jellyfin_url = jellyfin_url
-        self.api_key = api_key
         self.item_id = item_id
         self.original_genres = original_genres or []
         self.original_tags = original_tags or []
@@ -163,8 +155,6 @@ class MetadataUpdateService(ServiceBase):
         Returns:
             None
         """
-        headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
-
         # Calculate new genres and tags
         new_genres = self.calculate_new_genres()
         new_tags = self.calculate_new_tags()
@@ -175,9 +165,6 @@ class MetadataUpdateService(ServiceBase):
         ):
             logger.info(f"Metadata already correct for {self.movie.full_title}, skipping update")
             return
-
-        # Create request URL - using the Jellyfin API endpoint
-        api_url = urljoin(self.jellyfin_url, f"/Items/{self.item_id}")
 
         # Prepare data for the request
         data = {}
@@ -195,10 +182,9 @@ class MetadataUpdateService(ServiceBase):
         # Send request to Jellyfin API if there are changes to make
         if data:
             try:
-                response = requests.post(api_url, headers=headers, json=data)
-                response.raise_for_status()
+                jellyfin.client.update_item(self.item_id, data)
                 logger.info(f"Successfully updated metadata for {self.movie.full_title}")
-            except requests.exceptions.RequestException as e:
+            except Exception as e:
                 logger.error(f"Failed to update metadata: {e}")
                 raise MetadataUpdateError(
                     f"Failed to update metadata for '{self.movie.full_title}'"
@@ -217,31 +203,6 @@ class MetadataUpdateService(ServiceBase):
         movie_file = cls.file_from_message(message)
         movie = Movie.from_file(movie_file)
 
-        # Extract necessary information from the webhook
-        jellyfin_url = JELLYFIN_HOST or message.get("ServerUrl", "")
-
-        # Ensure URL has a protocol
-        if not jellyfin_url.startswith(("http://", "https://")):
-            jellyfin_url = f"http://{jellyfin_url}"
-
-        # Ensure URL has the correct port
-        parsed_url = urlparse(jellyfin_url)
-
-        # If no port is specified, add the default port
-        if not parsed_url.port:
-            netloc = f"{parsed_url.netloc}:{JELLYFIN_PORT}"
-            jellyfin_url = urlunparse(
-                (
-                    parsed_url.scheme,
-                    netloc,
-                    parsed_url.path,
-                    parsed_url.params,
-                    parsed_url.query,
-                    parsed_url.fragment,
-                )
-            )
-
-        api_key = JELLYFIN_API_KEY
         item_id = message.get("ItemId", "")
 
         # Extract original genres
@@ -260,8 +221,6 @@ class MetadataUpdateService(ServiceBase):
 
         return cls(
             movie=movie,
-            jellyfin_url=jellyfin_url,
-            api_key=api_key,
             item_id=item_id,
             original_genres=original_genres,
             original_tags=original_tags,
