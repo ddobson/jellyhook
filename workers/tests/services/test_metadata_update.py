@@ -47,12 +47,11 @@ def metadata_config_with_rules():
     }
 
 
-@mock.patch("workers.services.metadata_update.JELLYFIN_API_KEY", "api_key_123")
-@mock.patch("workers.services.metadata_update.requests.post")
+@mock.patch("workers.clients.jellyfin.client")
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
 def test_metadata_update_service_init_from_message(
-    mock_from_file, mock_file_from_message, mock_post, mock_message_standup
+    mock_from_file, mock_file_from_message, mock_client, mock_message_standup
 ):
     # Setup
     file_path = "/data/media/stand-up/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv"
@@ -66,15 +65,13 @@ def test_metadata_update_service_init_from_message(
     service = MetadataUpdateService.from_message(mock_message_standup)
 
     # Assert
-    assert service.jellyfin_url == "http://jellyfin.server:8096"
-    assert service.api_key == "api_key_123"
     assert service.item_id == "123456"
     assert service.original_genres == ["Comedy", "Documentary"]
     assert service.original_tags == ["Netflix", "Special"]
     assert service.item_data == mock_message_standup
 
 
-@mock.patch("workers.services.metadata_update.requests.post")
+@mock.patch("workers.clients.jellyfin.client")
 @mock.patch(
     "workers.services.metadata_update.METADATA_RULES",
     {
@@ -87,10 +84,11 @@ def test_metadata_update_service_init_from_message(
         "rules": [],
     },
 )
-def test_find_matching_rules_path_match(mock_post, mock_movie_standup):
+def test_find_matching_rules_path_match(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
-        mock_movie_standup, "http://jellyfin.server", "api_key_123", "123456"
+        movie=mock_movie_standup,
+        item_id="123456",
     )
 
     # Execute
@@ -102,7 +100,7 @@ def test_find_matching_rules_path_match(mock_post, mock_movie_standup):
     assert service.matching_rules[0]["genres"]["replace_existing"] is True
 
 
-@mock.patch("workers.services.metadata_update.requests.post")
+@mock.patch("workers.clients.jellyfin.client")
 @mock.patch(
     "workers.services.metadata_update.METADATA_RULES",
     {
@@ -115,10 +113,11 @@ def test_find_matching_rules_path_match(mock_post, mock_movie_standup):
         "rules": [],
     },
 )
-def test_find_matching_rules_path_no_match(mock_post, mock_movie_anime):
+def test_find_matching_rules_path_no_match(mock_client, mock_movie_anime):
     # Setup
     service = MetadataUpdateService(
-        mock_movie_anime, "http://jellyfin.server", "api_key_123", "789012"
+        movie=mock_movie_anime,
+        item_id="789012",
     )
 
     # Execute
@@ -128,7 +127,7 @@ def test_find_matching_rules_path_no_match(mock_post, mock_movie_anime):
     assert len(service.matching_rules) == 0
 
 
-@mock.patch("workers.services.metadata_update.requests.post")
+@mock.patch("workers.clients.jellyfin.client")
 @mock.patch(
     "workers.services.metadata_update.METADATA_RULES",
     {
@@ -143,13 +142,11 @@ def test_find_matching_rules_path_no_match(mock_post, mock_movie_anime):
         ],
     },
 )
-def test_find_matching_rules_pattern_match(mock_post, mock_movie_standup):
+def test_find_matching_rules_pattern_match(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
-        mock_movie_standup,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=mock_movie_standup,
+        item_id="123456",
         item_data={"Overview": "The comedian performs a set at Boston's Symphony Hall."},
     )
 
@@ -162,7 +159,7 @@ def test_find_matching_rules_pattern_match(mock_post, mock_movie_standup):
     assert service.matching_rules[0]["genres"]["replace_existing"] is False
 
 
-@mock.patch("workers.services.metadata_update.requests.post")
+@mock.patch("workers.clients.jellyfin.client")
 @mock.patch(
     "workers.services.metadata_update.METADATA_RULES",
     {
@@ -177,13 +174,11 @@ def test_find_matching_rules_pattern_match(mock_post, mock_movie_standup):
         ],
     },
 )
-def test_find_matching_rules_pattern_no_match(mock_post, mock_movie_standup):
+def test_find_matching_rules_pattern_no_match(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
-        mock_movie_standup,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=mock_movie_standup,
+        item_id="123456",
         item_data={"Overview": "The comedian performs a set at Boston's Symphony Hall."},
     )
 
@@ -197,10 +192,8 @@ def test_find_matching_rules_pattern_no_match(mock_post, mock_movie_standup):
 def test_calculate_new_genres_replace():
     # Setup
     service = MetadataUpdateService(
-        None,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=None,
+        item_id="123456",
         original_genres=["Comedy", "Documentary"],
     )
     service.matching_rules = [{"genres": {"new_genres": ["Stand-Up"], "replace_existing": True}}]
@@ -215,10 +208,8 @@ def test_calculate_new_genres_replace():
 def test_calculate_new_genres_add():
     # Setup
     service = MetadataUpdateService(
-        None,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=None,
+        item_id="123456",
         original_genres=["Comedy", "Documentary"],
     )
     service.matching_rules = [{"genres": {"new_genres": ["Stand-Up"], "replace_existing": False}}]
@@ -233,10 +224,8 @@ def test_calculate_new_genres_add():
 def test_calculate_new_genres_add_no_duplicates():
     # Setup
     service = MetadataUpdateService(
-        None,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=None,
+        item_id="123456",
         original_genres=["Comedy", "Documentary"],
     )
     service.matching_rules = [
@@ -253,7 +242,9 @@ def test_calculate_new_genres_add_no_duplicates():
 def test_calculate_new_genres_multiple_rules():
     # Setup
     service = MetadataUpdateService(
-        None, "http://jellyfin.server", "api_key_123", "123456", original_genres=["Comedy"]
+        movie=None, 
+        item_id="123456", 
+        original_genres=["Comedy"]
     )
     service.matching_rules = [
         {"genres": {"new_genres": ["Stand-Up"], "replace_existing": False}},
@@ -270,10 +261,8 @@ def test_calculate_new_genres_multiple_rules():
 def test_calculate_new_genres_replace_then_add():
     # Setup
     service = MetadataUpdateService(
-        None,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=None,
+        item_id="123456",
         original_genres=["Comedy", "Documentary"],
     )
     service.matching_rules = [
@@ -291,10 +280,8 @@ def test_calculate_new_genres_replace_then_add():
 def test_calculate_new_tags_replace():
     # Setup
     service = MetadataUpdateService(
-        None,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=None,
+        item_id="123456",
         original_tags=["Netflix", "Special"],
     )
     service.matching_rules = [{"tags": {"new_tags": ["Comedy Special"], "replace_existing": True}}]
@@ -309,10 +296,8 @@ def test_calculate_new_tags_replace():
 def test_calculate_new_tags_add():
     # Setup
     service = MetadataUpdateService(
-        None,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=None,
+        item_id="123456",
         original_tags=["Netflix", "Special"],
     )
     service.matching_rules = [{"tags": {"new_tags": ["Comedy Special"], "replace_existing": False}}]
@@ -324,18 +309,12 @@ def test_calculate_new_tags_add():
     assert sorted(new_tags) == sorted(["Netflix", "Special", "Comedy Special"])
 
 
-@mock.patch("workers.services.metadata_update.requests.post")
-def test_update_metadata_with_genre_changes(mock_post, mock_movie_standup):
+@mock.patch("workers.clients.jellyfin.client")
+def test_update_metadata_with_genre_changes(mock_client, mock_movie_standup):
     # Setup
-    mock_response = mock.MagicMock()
-    mock_response.raise_for_status.return_value = None
-    mock_post.return_value = mock_response
-
     service = MetadataUpdateService(
-        mock_movie_standup,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=mock_movie_standup,
+        item_id="123456",
         original_genres=["Comedy"],
     )
     service.matching_rules = [{"genres": {"new_genres": ["Stand-Up"], "replace_existing": True}}]
@@ -344,25 +323,18 @@ def test_update_metadata_with_genre_changes(mock_post, mock_movie_standup):
     service.update_metadata()
 
     # Assert
-    mock_post.assert_called_once_with(
-        "http://jellyfin.server/Items/123456",
-        headers={"Authorization": "api_key_123", "Content-Type": "application/json"},
-        json={"Genres": ["Stand-Up"]},
+    mock_client.update_item.assert_called_once_with(
+        "123456",
+        {"Genres": ["Stand-Up"]},
     )
 
 
-@mock.patch("workers.services.metadata_update.requests.post")
-def test_update_metadata_with_tag_changes(mock_post, mock_movie_standup):
+@mock.patch("workers.clients.jellyfin.client")
+def test_update_metadata_with_tag_changes(mock_client, mock_movie_standup):
     # Setup
-    mock_response = mock.MagicMock()
-    mock_response.raise_for_status.return_value = None
-    mock_post.return_value = mock_response
-
     service = MetadataUpdateService(
-        mock_movie_standup,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=mock_movie_standup,
+        item_id="123456",
         original_tags=["Netflix"],
     )
     service.matching_rules = [{"tags": {"new_tags": ["Comedy Special"], "replace_existing": True}}]
@@ -371,25 +343,18 @@ def test_update_metadata_with_tag_changes(mock_post, mock_movie_standup):
     service.update_metadata()
 
     # Assert
-    mock_post.assert_called_once_with(
-        "http://jellyfin.server/Items/123456",
-        headers={"Authorization": "api_key_123", "Content-Type": "application/json"},
-        json={"Tags": ["Comedy Special"]},
+    mock_client.update_item.assert_called_once_with(
+        "123456",
+        {"Tags": ["Comedy Special"]},
     )
 
 
-@mock.patch("workers.services.metadata_update.requests.post")
-def test_update_metadata_with_both_changes(mock_post, mock_movie_standup):
+@mock.patch("workers.clients.jellyfin.client")
+def test_update_metadata_with_both_changes(mock_client, mock_movie_standup):
     # Setup
-    mock_response = mock.MagicMock()
-    mock_response.raise_for_status.return_value = None
-    mock_post.return_value = mock_response
-
     service = MetadataUpdateService(
-        mock_movie_standup,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=mock_movie_standup,
+        item_id="123456",
         original_genres=["Comedy"],
         original_tags=["Netflix"],
     )
@@ -404,21 +369,18 @@ def test_update_metadata_with_both_changes(mock_post, mock_movie_standup):
     service.update_metadata()
 
     # Assert
-    mock_post.assert_called_once_with(
-        "http://jellyfin.server/Items/123456",
-        headers={"Authorization": "api_key_123", "Content-Type": "application/json"},
-        json={"Genres": ["Stand-Up"], "Tags": ["Comedy Special"]},
+    mock_client.update_item.assert_called_once_with(
+        "123456",
+        {"Genres": ["Stand-Up"], "Tags": ["Comedy Special"]},
     )
 
 
-@mock.patch("workers.services.metadata_update.requests.post")
-def test_update_metadata_no_changes_needed(mock_post, mock_movie_standup):
+@mock.patch("workers.clients.jellyfin.client")
+def test_update_metadata_no_changes_needed(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
-        mock_movie_standup,
-        "http://jellyfin.server",
-        "api_key_123",
-        "123456",
+        movie=mock_movie_standup,
+        item_id="123456",
         original_genres=["Stand-Up"],
         original_tags=["Comedy Special"],
     )
@@ -433,7 +395,7 @@ def test_update_metadata_no_changes_needed(mock_post, mock_movie_standup):
     service.update_metadata()
 
     # Assert
-    mock_post.assert_not_called()
+    mock_client.update_item.assert_not_called()
 
 
 @mock.patch.object(MetadataUpdateService, "find_matching_rules")
@@ -447,7 +409,8 @@ def test_exec_with_matching_rules(
     )
 
     service = MetadataUpdateService(
-        mock_movie_standup, "http://jellyfin.server", "api_key_123", "123456"
+        movie=mock_movie_standup, 
+        item_id="123456"
     )
     service.matching_rules = [{"genres": {"new_genres": ["Stand-Up"]}}]
 
@@ -468,7 +431,8 @@ def test_exec_without_matching_rules(
     mock_find_matching_rules.return_value = None
 
     service = MetadataUpdateService(
-        mock_movie_standup, "http://jellyfin.server", "api_key_123", "123456"
+        movie=mock_movie_standup, 
+        item_id="123456"
     )
     service.matching_rules = []
 
@@ -492,12 +456,11 @@ def test_exec_without_matching_rules(
         "rules": [],
     },
 )
-@mock.patch("workers.services.metadata_update.JELLYFIN_API_KEY", "api_key_123")
-@mock.patch("workers.services.metadata_update.requests.post")
+@mock.patch("workers.clients.jellyfin.client")
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
 def test_end_to_end_standup_path(
-    mock_from_file, mock_file_from_message, mock_post, mock_message_standup
+    mock_from_file, mock_file_from_message, mock_client, mock_message_standup
 ):
     # Setup
     file_path = "/data/media/stand-up/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv"
@@ -506,18 +469,15 @@ def test_end_to_end_standup_path(
     mock_movie.full_path = file_path
     mock_movie.full_title = "Bobby Guy (2023)"
     mock_from_file.return_value = mock_movie
-    mock_response = mock.MagicMock()
-    mock_post.return_value = mock_response
 
     # Execute
     service = MetadataUpdateService.from_message(mock_message_standup)
     service.exec()
 
     # Assert - should match path rule and update genres
-    mock_post.assert_called_once_with(
-        "http://jellyfin.server:8096/Items/123456",
-        headers={"Authorization": "api_key_123", "Content-Type": "application/json"},
-        json={"Genres": ["Stand-Up"]},
+    mock_client.update_item.assert_called_once_with(
+        "123456",
+        {"Genres": ["Stand-Up"]},
     )
 
 
@@ -535,12 +495,11 @@ def test_end_to_end_standup_path(
         ],
     },
 )
-@mock.patch("workers.services.metadata_update.JELLYFIN_API_KEY", "api_key_123")
-@mock.patch("workers.services.metadata_update.requests.post")
+@mock.patch("workers.clients.jellyfin.client")
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
 def test_end_to_end_pattern_match(
-    mock_from_file, mock_file_from_message, mock_post, mock_message_standup
+    mock_from_file, mock_file_from_message, mock_client, mock_message_standup
 ):
     # Setup
     file_path = "/data/media/movies/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv"
@@ -549,16 +508,13 @@ def test_end_to_end_pattern_match(
     mock_movie.full_path = file_path
     mock_movie.full_title = "Bobby Guy (2023)"
     mock_from_file.return_value = mock_movie
-    mock_response = mock.MagicMock()
-    mock_post.return_value = mock_response
 
     # Execute
     service = MetadataUpdateService.from_message(mock_message_standup)
     service.exec()
 
     # Assert - should match pattern rule and add genre without replacing
-    mock_post.assert_called_once_with(
-        "http://jellyfin.server:8096/Items/123456",
-        headers={"Authorization": "api_key_123", "Content-Type": "application/json"},
-        json={"Genres": ["Comedy", "Documentary", "Live Performance"]},
+    mock_client.update_item.assert_called_once_with(
+        "123456",
+        {"Genres": ["Comedy", "Documentary", "Live Performance"]},
     )
