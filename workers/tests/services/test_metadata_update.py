@@ -1,50 +1,6 @@
 from unittest import mock
 
-import pytest
-
 from workers.services.metadata_update import MetadataUpdateService
-
-
-@pytest.fixture
-def metadata_config_with_paths():
-    return {
-        "paths": [
-            {
-                "path": "/data/media/stand-up",
-                "genres": {"new_genres": ["Stand-Up"], "replace_existing": True},
-                "tags": {"new_tags": ["Comedy Special"], "replace_existing": False},
-            },
-            {
-                "path": "/data/media/anime",
-                "genres": {"new_genres": ["Anime", "Animation"], "replace_existing": False},
-                "tags": {"new_tags": ["Anime"], "replace_existing": False},
-            },
-        ],
-        "rules": [],
-    }
-
-
-@pytest.fixture
-def metadata_config_with_rules():
-    return {
-        "paths": [],
-        "rules": [
-            {
-                "match_pattern": ".*concert.*|.*perform.*",
-                "match_field": "Overview",
-                "case_insensitive": True,
-                "genres": {"new_genres": ["Live Performance"], "replace_existing": False},
-                "tags": {"new_tags": ["Performance"], "replace_existing": False},
-            },
-            {
-                "match_pattern": ".*anime.*",
-                "match_field": "Name",
-                "case_insensitive": True,
-                "genres": {"new_genres": ["Anime"], "replace_existing": True},
-                "tags": {"new_tags": ["Animation"], "replace_existing": True},
-            },
-        ],
-    }
 
 
 @mock.patch("workers.clients.jellyfin.client")
