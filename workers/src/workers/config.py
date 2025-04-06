@@ -17,12 +17,8 @@ JELLYFIN_API_KEY = os.getenv("JELLYFIN_API_KEY", "")
 JELLYFIN_PORT = int(os.getenv("JELLYFIN_PORT", "8096"))
 
 # Genre configuration
-GENRE_CONFIG_PATH = os.getenv("GENRE_CONFIG_PATH", "/config/genre_mappings.json")
 
-# Default minimal genre configuration
-DEFAULT_GENRE_CONFIG = {
-    "paths": [{"path": STANDUP_PATH, "genres": ["Stand-Up"], "replace_existing": True}],
-    "rules": [],
-}
-
-GENRE_MAPPINGS = utils.load_config_file(GENRE_CONFIG_PATH, default=DEFAULT_GENRE_CONFIG)
+# Metadata rules
+DEFAULT_METADATA_RULES = {"paths": [], "rules": []}
+METADATA_CONFIG_PATH = os.getenv("METADATA_CONFIG_PATH", "/config/genre_mappings.json")
+METADATA_RULES = utils.load_config_file(METADATA_CONFIG_PATH, default=DEFAULT_METADATA_RULES)

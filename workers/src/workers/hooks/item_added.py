@@ -9,7 +9,8 @@ import pika.spec
 
 from workers import utils
 from workers.logger import logger
-from workers.services import dovi_conversion, genre_modification
+from workers.services import dovi_conversion
+from workers.services.metadata_update import MetadataUpdateService
 
 
 @utils.timer
@@ -30,13 +31,13 @@ def item_added(
     message = json.loads(body)
     completed = False
 
-    # First, try to modify genres for stand-up media
+    # First, try to update metadata (genres and tags) for the media
     try:
-        genre_service = genre_modification.GenreModificationService.from_message(message)
-        genre_service.exec()
+        metadata_service = MetadataUpdateService.from_message(message)
+        metadata_service.exec()
     except Exception as e:
-        logger.error(f"Genre modification failed: {e}")
-        # Don't fail the entire process if genre modification fails
+        logger.error(f"Metadata update failed: {e}")
+        # Don't fail the entire process if metadata update fails
 
     # Then, try Dolby Vision conversion as before
     try:
