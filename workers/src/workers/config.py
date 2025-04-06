@@ -27,5 +27,5 @@ JELLYFIN_USER_ID = os.getenv("JELLYFIN_USER_ID", "")
 
 # Metadata rules
 DEFAULT_METADATA_RULES = {"paths": [], "rules": []}
-METADATA_CONFIG_PATH = os.getenv("METADATA_CONFIG_PATH", "/config/genre_mappings.json")
+METADATA_CONFIG_PATH = os.getenv("METADATA_CONFIG_PATH", "/config/metadata_config.json")
 METADATA_RULES = utils.load_config_file(METADATA_CONFIG_PATH, default=DEFAULT_METADATA_RULES)
