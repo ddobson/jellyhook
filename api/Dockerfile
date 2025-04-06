@@ -28,12 +28,12 @@ COPY src ./src/
 
 # Install python dependencies
 RUN if [ "$ENV" = "development" ]; then \
-        uv export > requirements.txt && \
-        uv pip install --system --no-cache-dir -r requirements.txt && \
-        rm requirements.txt; \
+        uv export > requirements.txt; \
     else \
-        uv pip install --system --no-cache-dir .; \
-    fi
+        uv export --no-dev > requirements.txt; \
+    fi && \
+    uv pip install --system --no-cache-dir -r requirements.txt && \
+    rm requirements.txt
 
 # Create log directory and set permissions
 RUN mkdir -p /config/logs && \

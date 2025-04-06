@@ -77,5 +77,5 @@ jobs:
         uses: peter-evans/repository-dispatch@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: release-created
+          event-type: release-published
           client-payload: '{"tag": "${{ github.event.inputs.tag_name }}"}'
