@@ -60,4 +60,7 @@ services:
       JELLYFIN_API_KEY: "" # Add your Jellyfin API key here
       JELLYFIN_PORT: "8096"  # Default Jellyfin port
       JELLYFIN_HOST: "http://homelab.local"
-      METADATA_CONFIG_PATH: "/config/genre_mappings.json"
+      JELLYFIN_USER_ID: "" # Add your Jellyfin user ID here
+      METADATA_CONFIG_PATH: "/config/metadata_config.json"
+    env_file:
+      - ./workers/.env
