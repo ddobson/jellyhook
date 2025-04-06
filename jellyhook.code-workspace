@@ -39,13 +39,13 @@
       "**/*.egg-info": true
     },
     // "mypy-type-checker.args": ["--config-file=../mypy.ini"],
-    "python.analysis.extraPaths": [
-      "../api/src",
-      "../workers/src"
-    ],
+    "python.analysis.extraPaths": ["../api/src", "../workers/src"],
     "python.terminal.activateEnvironment": true,
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
-    "ruff.configuration": "../.ruff.toml"
+    "ruff.configuration": "../.ruff.toml",
+    "[yaml]": {
+      "editor.defaultFormatter": "esbenp.prettier-vscode"
+    }
   }
 }
