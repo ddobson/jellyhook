@@ -34,7 +34,7 @@ def media_dir(tmpdir):
 def mock_movie_standup():
     return mock.MagicMock(
         full_title="John Mulaney: Baby J",
-        full_path="/data/media/stand-up/John Mulaney Baby J (2023)/John.Mulaney.Baby.J.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv",
+        full_path="/data/media/stand-up/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv",
     )
 
 
@@ -42,7 +42,7 @@ def mock_movie_standup():
 def mock_movie_anime():
     return mock.MagicMock(
         full_title="Your Name",
-        full_path="/data/media/anime/Your Name (2016)/Your.Name.2016.2160p.BluRay.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv",
+        full_path="/data/media/anime/Sumo Pizza (2016)/Your.Name.2016.2160p.BluRay.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv",
     )
 
 
@@ -51,7 +51,8 @@ def mock_message_standup():
     return {
         "ServerUrl": "jellyfin.server",
         "ItemId": "123456",
-        "Name": "John Mulaney: Baby J",
+        "Name": "Bobby Guy",
+        "Year": 2023,
         "ItemType": "Movie",
         "Genres": "Comedy, Documentary",
         "Tags": "Netflix, Special",
@@ -64,9 +65,10 @@ def mock_message_anime():
     return {
         "ServerUrl": "jellyfin.server",
         "ItemId": "789012",
-        "Name": "Your Name",
+        "Name": "Sumo Pizza",
+        "Year": 2016,
         "ItemType": "Movie",
-        "Genres": "Romance, Drama",
+        "Genres": "Comedy, Drama",
         "Tags": "Foreign, Subtitled",
-        "Overview": "A teenage boy and girl embark on a quest to meet each other for the first time after they magically swap bodies.",
+        "Overview": "Two friends navigate the world of sumo wrestling and pizza delivery.",
     }
