@@ -1,6 +1,7 @@
 import pathlib
-import pytest
 from unittest import mock
+
+import pytest
 
 from workers.movie import Movie
 
