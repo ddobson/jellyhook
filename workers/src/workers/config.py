@@ -14,6 +14,7 @@ WORKER_ENV = os.getenv("WORKER_ENV", "development")
 # Jellyfin configuration
 # TODO: Add Jellyfin Host
 JELLYFIN_API_KEY = os.getenv("JELLYFIN_API_KEY", "")
+JELLYFIN_HOST = os.getenv("JELLYFIN_HOST")
 JELLYFIN_PORT = int(os.getenv("JELLYFIN_PORT", "8096"))
 
 # Genre configuration

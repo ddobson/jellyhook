@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
 
-from workers.config import JELLYFIN_API_KEY, JELLYFIN_PORT, METADATA_RULES
+from workers.config import JELLYFIN_API_KEY, JELLYFIN_HOST, JELLYFIN_PORT, METADATA_RULES
 from workers.errors import WebhookWorkerError
 from workers.logger import logger
 from workers.movie import Movie
@@ -218,7 +218,7 @@ class MetadataUpdateService(ServiceBase):
         movie = Movie.from_file(movie_file)
 
         # Extract necessary information from the webhook
-        jellyfin_url = message.get("ServerUrl", "")
+        jellyfin_url = JELLYFIN_HOST or message.get("ServerUrl", "")
 
         # Ensure URL has a protocol
         if not jellyfin_url.startswith(("http://", "https://")):
