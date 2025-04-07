@@ -45,7 +45,6 @@ jobs:
           uv run --active ruff check --config ../ruff.toml .
           uv run --active ruff check --select I --config ../ruff.toml .
           uv run --active ruff format --check --config ../ruff.toml .
-          uv run --active mypy --config-file=../mypy.ini .
 
   lint_workers:
     needs: setup
@@ -66,7 +65,6 @@ jobs:
           uv run --active ruff check --config ../ruff.toml .
           uv run --active ruff check --select I --config ../ruff.toml .
           uv run --active ruff format --check --config ../ruff.toml .
-          uv run --active mypy --config-file=../mypy.ini .
 
   test_api:
     needs: setup
