@@ -4,49 +4,139 @@ on:
   push:
     branches: ["main"]
   pull_request:
-    branches:
-      - "main"
+    branches: ["main"]
 
 jobs:
-  lint-and-test:
-    name: Lint and Test
+  setup:
+    name: Setup Environment
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
+          cache: "pip"
 
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Install dependencies from lock files
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            api/.venv
+            workers/.venv
+          key: ${{ runner.os }}-deps-${{ hashFiles('**/requirements.lock') }}
+
+      - name: Install dependencies
         run: |
           uv --directory api sync
           uv --directory workers sync
 
-      - name: Run linting
-        run: make lint
+  lint_api:
+    needs: setup
+    name: Lint API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v4
+        with:
+          path: api/.venv
+          key: ${{ runner.os }}-deps-${{ hashFiles('**/requirements.lock') }}
 
-      - name: Check formatting
-        run: make format-check
+      - name: Run API linting
+        working-directory: ./api
+        run: |
+          uv run --active ruff check --config ../ruff.toml .
+          uv run --active ruff check --select I --config ../ruff.toml .
+          uv run --active ruff format --check --config ../ruff.toml .
+          uv run --active mypy --config-file=../mypy.ini .
 
-      - name: Run type checking
-        run: make typecheck
-        continue-on-error: true  # Based on comment in README about type compliance
+  lint_workers:
+    needs: setup
+    name: Lint Workers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v4
+        with:
+          path: workers/.venv
+          key: ${{ runner.os }}-deps-${{ hashFiles('**/requirements.lock') }}
 
-      - name: Run tests
-        run: make test_cov REPORT=xml
+      - name: Run Workers linting
+        working-directory: ./workers
+        run: |
+          uv run --active ruff check --config ../ruff.toml .
+          uv run --active ruff check --select I --config ../ruff.toml .
+          uv run --active ruff format --check --config ../ruff.toml .
+          uv run --active mypy --config-file=../mypy.ini .
+
+  test_api:
+    needs: setup
+    name: Test API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v4
+        with:
+          path: api/.venv
+          key: ${{ runner.os }}-deps-${{ hashFiles('**/requirements.lock') }}
+
+      - name: Run API tests
+        working-directory: ./api
+        run: |
+          uv run --active pytest \
+            --cov=api \
+            --cov-branch \
+            --cov-report=xml \
+            tests
 
       - uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: true
-          files: ./api/coverage.xml,./workers/coverage.xml
+          files: ./api/coverage.xml
           flags: unittests
           token: ${{ secrets.CODECOV_TOKEN }}
-          verbose: true
+
+  test_workers:
+    needs: setup
+    name: Test Workers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/cache@v4
+        with:
+          path: workers/.venv
+          key: ${{ runner.os }}-deps-${{ hashFiles('**/requirements.lock') }}
+
+      - name: Run Workers tests
+        working-directory: ./workers
+        run: |
+          uv run --active pytest \
+            --cov=workers \
+            --cov-branch \
+            --cov-report=xml \
+            tests
+
+      - uses: codecov/codecov-action@v5
+        with:
+          fail_ci_if_error: true
+          files: ./workers/coverage.xml
+          flags: unittests
+          token: ${{ secrets.CODECOV_TOKEN }}
