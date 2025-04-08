@@ -123,3 +123,37 @@ jobs:
           files: ./workers/coverage.xml
           flags: unittests
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  test_workers_component:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code (needed for Codecov to match reports)
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run tests in container
+        run: |
+          docker pull ${{ vars.COVERAGE_TEST_IMAGE }}
+
+          docker run --name test-runner ${{ vars.COVERAGE_TEST_IMAGE }}}} \
+            python3 -m pytest --cov=. --cov-report=xml tests/component
+
+      - name: Extract coverage report
+        run: |
+          docker cp test-runner:/app/coverage.xml coverage.xml
+          docker rm test-runner
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          files: coverage.xml
+          flags: componenttests
+          token: ${{ secrets.CODECOV_TOKEN }}
