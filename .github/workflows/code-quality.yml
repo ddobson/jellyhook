@@ -118,7 +118,7 @@ jobs:
             --cov=workers \
             --cov-branch \
             --cov-report=xml \
-            tests
+            tests/unit
 
       - uses: codecov/codecov-action@v5
         with:
