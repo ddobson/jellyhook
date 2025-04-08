@@ -148,7 +148,7 @@ jobs:
 
       - name: Run component tests
         run: |
-          docker run --name test-runner ${{ vars.COVERAGE_TEST_IMAGE }} python3 -m pytest --cov=. --cov-report=xml tests/component
+          docker run --name test-runner ${{ vars.COVERAGE_TEST_IMAGE }} python3 -m pytest --cov=workers --cov-report=xml tests/component
 
       - name: Extract coverage report
         run: |
