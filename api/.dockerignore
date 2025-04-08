@@ -1,0 +1,40 @@
+# Version control
+.git
+.gitignore
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+**/*.env
+
+# Development files
+**/__pycache__
+**/*.py[cod]
+**/*$py.class
+**/*.so
+.Python
+**/env/
+**/venv/
+**/ENV/
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# IDE files
+.idea/
+.vscode/
+**/*.swp
+**/*.swo
+**/*.swn
+**/*~
+
+# User-specific files
+**/.DS_Store
+**/Thumbs.db
+
+# Project-specific
+**/*.log
+**/node_modules/
