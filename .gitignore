@@ -125,5 +125,7 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Propject-specific files
 dovi_convert.sh
 docker-compose.override.yaml
+workers/tests/component/assets/*.mkv
