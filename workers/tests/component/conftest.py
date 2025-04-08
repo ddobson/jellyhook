@@ -1,7 +1,6 @@
-import json
 import pathlib
 import shutil
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
