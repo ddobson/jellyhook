@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: ["main"]
 
+env:
+  REGISTRY: ghcr.io
+
 jobs:
   setup:
     name: Setup Environment
@@ -68,7 +71,7 @@ jobs:
 
   test_api:
     needs: setup
-    name: Test API
+    name: Test API Unit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +100,7 @@ jobs:
 
   test_workers:
     needs: setup
-    name: Test Workers
+    name: Test Workers Unit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -115,11 +118,47 @@ jobs:
             --cov=workers \
             --cov-branch \
             --cov-report=xml \
-            tests
+            tests/unit
 
       - uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: true
           files: ./workers/coverage.xml
           flags: unittests
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  test_workers_component:
+    name: Test Workers Component
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code (needed for Codecov to match reports)
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull coverage test image
+        run: |
+          docker pull ${{ vars.COVERAGE_TEST_IMAGE }}
+
+      - name: Run component tests
+        run: |
+          docker run --name test-runner ${{ vars.COVERAGE_TEST_IMAGE }} python3 -m pytest --cov=workers --cov-report=xml tests/component
+
+      - name: Extract coverage report
+        run: |
+          docker cp test-runner:/app/coverage.xml coverage.xml
+          docker rm test-runner
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: true
+          files: coverage.xml
+          flags: componenttests
           token: ${{ secrets.CODECOV_TOKEN }}
