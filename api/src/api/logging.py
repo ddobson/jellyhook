@@ -65,20 +65,13 @@ def init_app(app: Flask):
     # Remove default logger
     logger.remove()
 
-    # Configure format based on environment
-    if is_production := app.config["ENV"] == Env.PRODUCTION:
-        # Production format (no colors)
-        log_format = (
-            "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {name}:{function}:{line} | {message}"
-        )
-    else:
-        # Development format (with colors)
-        log_format = (
-            "<yellow>{time:YYYY-MM-DD HH:mm:ss.SSS}</yellow> | "
-            "<level>{level}</level> | "
-            "<blue>{name}</blue>:<blue>{function}</blue>:<blue>{line}</blue> | "
-            "<level>{message}</level>"
-        )
+    # Development format (with colors)
+    log_format = (
+        "<yellow>{time:YYYY-MM-DD HH:mm:ss.SSS}</yellow> | "
+        "<level>{level}</level> | "
+        "<blue>{name}</blue>:<blue>{function}</blue>:<blue>{line}</blue> | "
+        "<level>{message}</level>"
+    )
 
     # Add console handler
     logger.configure(patcher=_format_json_message)
