@@ -5,6 +5,7 @@ import sys
 from flask import Flask, request
 from loguru import logger
 
+from api import config
 from api.config import Env
 
 # Completely silence specific libraries
@@ -62,27 +63,22 @@ def init_app(app: Flask):
     Args:
         app: Flask application instance
     """
+    is_production = config.ENV == Env.PRODUCTION
+
     # Remove default logger
     logger.remove()
 
-    # Configure format based on environment
-    if is_production := app.config["ENV"] == Env.PRODUCTION:
-        # Production format (no colors)
-        log_format = (
-            "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {name}:{function}:{line} | {message}"
-        )
-    else:
-        # Development format (with colors)
-        log_format = (
-            "<yellow>{time:YYYY-MM-DD HH:mm:ss.SSS}</yellow> | "
-            "<level>{level}</level> | "
-            "<blue>{name}</blue>:<blue>{function}</blue>:<blue>{line}</blue> | "
-            "<level>{message}</level>"
-        )
+    # Development format (with colors)
+    log_format = (
+        "<yellow>{time:YYYY-MM-DD HH:mm:ss.SSS}</yellow> | "
+        "<level>{level}</level> | "
+        "<blue>{name}</blue>:<blue>{function}</blue>:<blue>{line}</blue> | "
+        "<level>{message}</level>"
+    )
 
     # Add console handler
     logger.configure(patcher=_format_json_message)
-    logger.add(sys.stdout, format=log_format, level="INFO", colorize=not is_production)
+    logger.add(sys.stdout, format=log_format, level="INFO", colorize=True)
 
     # Disable all handlers for the silenced loggers
     for logger_name in SILENCED_LOGGERS:
