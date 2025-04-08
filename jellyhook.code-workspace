@@ -44,6 +44,9 @@
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
     "ruff.configuration": "../.ruff.toml",
+    "[python]": {
+      "editor.rulers": [100]
+    },
     "[yaml]": {
       "editor.defaultFormatter": "esbenp.prettier-vscode"
     }

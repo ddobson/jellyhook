@@ -27,9 +27,5 @@ dev = [
     "ruff<1.0.0,>=0.9.9",
 ]
 
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/workers"]

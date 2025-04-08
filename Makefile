@@ -50,6 +50,12 @@ test_cov:
 			tests && cd ..; \
 	done
 
+test_component: TAG ?= 0.1.0
+test_component:
+	@echo "Running component tests for api and workers directories..."
+	docker run --rm \
+		jellyhook-testing:$(TAG) \
+		python3 -m pytest tests/component/ --cov=. --cov-report=xml
 
 scan:
 	ggshield secret scan repo .
@@ -106,6 +112,31 @@ push_worker: build_worker tag_worker
 	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make push_worker ACCOUNT=your-account [REGISTRY=registry-url] [TAG=version]" && exit 1 )
 	@echo "Pushing Worker image to $(REGISTRY)/$(ACCOUNT)/jellyhook-worker:$(TAG)..."
 	docker push $(REGISTRY)/$(ACCOUNT)/jellyhook-worker:$(TAG)
+
+build_testing: DOCKERFILE ?= workers/Dockerfile.testenv
+build_testing: TAG ?= 0.1.0
+build_testing:
+	@echo "Building Testing image jellyhook-testing:$(TAG)..."
+	docker buildx build \
+		--no-cache \
+		--platform linux/amd64,linux/arm64 \
+		--tag jellyhook-testing:$(TAG) \
+		--load \
+		--file $(DOCKERFILE) ./workers
+
+tag_testing: TAG ?= 0.1.0
+tag_testing: REGISTRY ?= ghcr.io
+tag_testing:
+	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make tag_worker ACCOUNT=your-account [REGISTRY=registry-url] [TAG=version]" && exit 1 )
+	@echo "Tagging Testing image for $(REGISTRY)/$(ACCOUNT)..."
+	docker tag jellyhook-testing:$(TAG) $(REGISTRY)/$(ACCOUNT)/jellyhook-testing:$(TAG)
+
+push_testing: TAG ?= 0.1.0
+push_testing: REGISTRY ?= ghcr.io
+push_testing: build_worker tag_worker
+	@[ "${ACCOUNT}" ] || ( echo "Error: ACCOUNT is required. Usage: make push_worker ACCOUNT=your-account [REGISTRY=registry-url] [TAG=version]" && exit 1 )
+	@echo "Pushing Testing image to $(REGISTRY)/$(ACCOUNT)/jellyhook-testing:$(TAG)..."
+	docker push $(REGISTRY)/$(ACCOUNT)/jellyhook-testing:$(TAG)
 
 # Convenience target to build and push both
 push_all: push_api push_worker
