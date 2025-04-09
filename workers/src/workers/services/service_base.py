@@ -1,7 +1,7 @@
 import pathlib
 from abc import ABC, abstractmethod
 
-from workers.config import MOVIE_PATH, STANDUP_PATH
+from workers import config
 from workers.errors import WebhookWorkerError
 
 
@@ -18,11 +18,12 @@ class ServiceBase(ABC):
 
     @classmethod
     @abstractmethod
-    def from_message(cls, message: dict) -> "ServiceBase":
+    def from_message(cls, message: dict, service_config: dict) -> "ServiceBase":
         """Create an instance of the service from a message.
 
         Args:
             message (dict): The message to create the service from.
+            service_config (dict): The configuration for the service.
 
         Returns:
             ServiceBase: An instance of the service.
@@ -42,11 +43,10 @@ class ServiceBase(ABC):
         Raises:
             WebhookWorkerError: If no file is found or multiple files are found.
         """
-        base_dirs = [MOVIE_PATH, STANDUP_PATH]
         file_types = [".mkv", ".mp4", ".avi"]
         search_result = []
 
-        for base_dir in base_dirs:
+        for base_dir in config.MEDIA_PATHS:
             dirname = f"{base_dir}/{message['Name']} ({message['Year']})".replace(":", " -")
             obj_dir = pathlib.Path(dirname)
 

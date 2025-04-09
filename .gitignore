@@ -125,7 +125,12 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Misseclaneous
+CLAUDE*.md
+*.DS_Store
+
 # Propject-specific files
+docs/feature_plans
 dovi_convert.sh
 docker-compose.override.yaml
 workers/tests/component/assets/*.mkv

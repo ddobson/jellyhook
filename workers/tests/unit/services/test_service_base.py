@@ -21,9 +21,9 @@ def mock_child_service():
 
 def test_file_from_message_finds_movie(media_dir, mock_child_service):
     """Test finding a movie file from a message."""
-    with (
-        mock.patch("workers.services.service_base.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.services.service_base.STANDUP_PATH", media_dir["standup_path"]),
+    with mock.patch(
+        "workers.services.service_base.config.MEDIA_PATHS",
+        (media_dir["standup_path"], media_dir["movie_path"]),
     ):
         message = {"Name": "Test Movie", "Year": "2023"}
         result = mock_child_service.file_from_message(message)
@@ -34,9 +34,9 @@ def test_file_from_message_finds_movie(media_dir, mock_child_service):
 
 def test_file_from_message_finds_standup(media_dir, mock_child_service):
     """Test finding a standup file from a message."""
-    with (
-        mock.patch("workers.services.service_base.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.services.service_base.STANDUP_PATH", media_dir["standup_path"]),
+    with mock.patch(
+        "workers.services.service_base.config.MEDIA_PATHS",
+        (media_dir["standup_path"], media_dir["movie_path"]),
     ):
         message = {"Name": "Comedy Special", "Year": "2022"}
         result = mock_child_service.file_from_message(message)
@@ -56,9 +56,9 @@ def test_file_from_message_with_colon_in_name(media_dir, mock_child_service):
     with open(colon_movie_file, "w") as f:
         f.write("movie with colon content")
 
-    with (
-        mock.patch("workers.services.service_base.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.services.service_base.STANDUP_PATH", media_dir["standup_path"]),
+    with mock.patch(
+        "workers.services.service_base.config.MEDIA_PATHS",
+        (media_dir["standup_path"], media_dir["movie_path"]),
     ):
         message = {"Name": "Movie: Subtitle", "Year": "2024"}
         result = mock_child_service.file_from_message(message)
@@ -69,9 +69,9 @@ def test_file_from_message_with_colon_in_name(media_dir, mock_child_service):
 
 def test_file_from_message_no_file_found(media_dir, mock_child_service):
     """Test error when no file is found."""
-    with (
-        mock.patch("workers.services.service_base.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.services.service_base.STANDUP_PATH", media_dir["standup_path"]),
+    with mock.patch(
+        "workers.services.service_base.config.MEDIA_PATHS",
+        (media_dir["standup_path"], media_dir["movie_path"]),
     ):
         message = {"Name": "Non Existent Movie", "Year": "2023"}
 
@@ -89,9 +89,9 @@ def test_file_from_message_multiple_files_found(media_dir, mock_child_service):
     with open(second_file, "w") as f:
         f.write("second movie file content")
 
-    with (
-        mock.patch("workers.services.service_base.MOVIE_PATH", media_dir["movie_path"]),
-        mock.patch("workers.services.service_base.STANDUP_PATH", media_dir["standup_path"]),
+    with mock.patch(
+        "workers.services.service_base.config.MEDIA_PATHS",
+        (media_dir["standup_path"], media_dir["movie_path"]),
     ):
         message = {"Name": "Test Movie", "Year": "2023"}
 
