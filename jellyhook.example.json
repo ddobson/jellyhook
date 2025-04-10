@@ -1,0 +1,58 @@
+{
+  "worker": {
+    "webhooks": {
+      "item_added": {
+        "enabled": true,
+        "queue": "jellyfin:item_added",
+        "services": [
+          {
+            "name": "metadata_update",
+            "enabled": true,
+            "priority": 10,
+            "config": {
+              "paths": [
+                {
+                  "path": "/data/media/stand-up",
+                  "genres": {
+                    "replace_existing": true,
+                    "new_genres": ["Stand-Up"]
+                  },
+                  "tags": {
+                    "replace_existing": false,
+                    "new_tags": ["Comedy", "Stand-Up Comedy"]
+                  }
+                }
+              ],
+              "patterns": [
+                {
+                  "match_pattern": ".*(concert|live performance).*",
+                  "match_field": "Name",
+                  "case_insensitive": true,
+                  "genres": {
+                    "new_genres": ["Concert", "Music"],
+                    "replace_existing": false
+                  },
+                  "tags": {
+                    "new_tags": ["Concert", "Live Performance"],
+                    "replace_existing": false
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "dovi_conversion",
+            "enabled": true,
+            "priority": 20,
+            "config": {
+              "temp_dir": "/tmp/dovi_conversion",
+              "media_types": ["Movie"],
+              "target_profile": "8.1",
+              "min_file_size_gb": 10
+            }
+          }
+        ]
+      }
+    }
+  }
+}
