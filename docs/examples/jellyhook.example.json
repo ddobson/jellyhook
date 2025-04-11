@@ -67,10 +67,7 @@
             "enabled": true,
             "priority": 20,
             "config": {
-              "temp_dir": "/tmp/dovi_conversion",
-              "media_types": ["Movie"],
-              "target_profile": "8.1",
-              "min_file_size_gb": 10
+              "temp_dir": "/tmp/dovi_conversion"
             }
           }
         ]
