@@ -4,7 +4,7 @@ lint:
 	@echo "Running linting for api and workers directories..."
 	@for dir in api workers; do \
 		echo "Linting $${dir}..."; \
-		cd $${dir} && uv run --active ruff check --config ../ruff.toml . && cd ..; \
+		cd $${dir} && uv run --active ruff check --fix --config ../ruff.toml . && cd ..; \
 	done
 
 format:
