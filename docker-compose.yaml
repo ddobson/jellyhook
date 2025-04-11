@@ -46,7 +46,6 @@ services:
       - type: bind
         source: ./workers
         target: /app
-        read_only: true
       - type: bind
         source: /Volumes/appdata/jellyhook
         target: /config
