@@ -36,6 +36,28 @@
                     "new_tags": ["Concert", "Live Performance"],
                     "replace_existing": false
                   }
+                },
+                {
+                  "match_pattern": ".*workout.*|.*fitness.*",
+                  "match_field": "Overview",
+                  "case_insensitive": true,
+                  "tags": {
+                    "new_tags": ["Fitness", "Workout"],
+                    "replace_existing": true
+                  }
+                },
+                {
+                  "match_pattern": "^Kids.*",
+                  "match_field": "Name",
+                  "case_insensitive": false,
+                  "tags": {
+                    "new_tags": ["Kids", "Safe for Kids", "Family"],
+                    "replace_existing": false
+                  },
+                  "genres": {
+                    "new_genres": ["Kids"],
+                    "replace_existing": false
+                  }
                 }
               ]
             }

@@ -126,11 +126,11 @@ dmypy.json
 cython_debug/
 
 # Misseclaneous
-brainstorming
-CLAUDE.md
+CLAUDE*.md
 *.DS_Store
 
 # Propject-specific files
+docs/feature_plans
 dovi_convert.sh
 docker-compose.override.yaml
 workers/tests/component/assets/*.mkv
