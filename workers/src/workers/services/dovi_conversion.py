@@ -1,6 +1,7 @@
 import hashlib
 import json
 import pathlib
+from typing import Any
 
 from workers import utils
 from workers.config import TEMP_DIR
@@ -171,6 +172,8 @@ class DoviConversionService(ServiceBase):
             str: The path to the converted video stream.
 
         """
+        logger.info("Converting Dolby Vision to Profile 8.1...")
+
         p8_video_path = f"{self.tmp_dir}/P8.hevc"
         cmd = f'dovi_tool -m 2 convert --discard "{video_path}" -o "{p8_video_path}"'
         utils.run_command(cmd, log_output=True, log_err=True)
@@ -208,17 +211,22 @@ class DoviConversionService(ServiceBase):
         output_file.rename(target)
 
     @classmethod
-    def from_message(cls, message: dict) -> "DoviConversionService":
+    def from_message(cls, message: dict, service_config: dict[str, Any]) -> "DoviConversionService":
         """Create a DoviConversionService from a Jellyfin webhook message.
 
         Args:
             message (dict): The Jellyfin webhook message.
+            service_config (dict): The service configuration options.
 
         Returns:
             DoviConversionService: The initialized DoviConversionService.
         """
+        # Get the configured temp directory or fall back to default
+        temp_directory = service_config.get("temp_dir", TEMP_DIR)
+
         movie_file = cls.file_from_message(message)
         movie = Movie.from_file(movie_file)
-        tmp_dir = pathlib.Path(f"{TEMP_DIR}/{movie.folder_title}")
-        tmp_dir.mkdir(exist_ok=True)
+
+        tmp_dir = pathlib.Path(f"{temp_directory}/{movie.folder_title}")
+        tmp_dir.mkdir(exist_ok=True, parents=True)
         return cls(movie, tmp_dir)
