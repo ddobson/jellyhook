@@ -1,5 +1,6 @@
 import json
 import pathlib
+from typing import Dict, Any
 from unittest import mock
 
 import pytest
@@ -7,6 +8,14 @@ import pytest
 from workers.errors import WebhookWorkerError
 from workers.movie import Movie
 from workers.services.dovi_conversion import DoviConversionService
+
+
+@pytest.fixture
+def dovi_service_config() -> Dict[str, Any]:
+    """Create a test configuration for the Dolby Vision conversion service."""
+    return {
+        "temp_dir": "/tmp/dovi_conversion"
+    }
 
 
 @pytest.fixture
@@ -156,7 +165,7 @@ def test_move_to_target(dovi_service):
     output_file.rename.assert_called_once_with(target)
 
 
-def test_from_message_success():
+def test_from_message_success(dovi_service_config):
     """Test creating service from a message - success case."""
     # Mock the message
     message = {"Name": "Test Movie", "Year": "2023"}
@@ -183,22 +192,22 @@ def test_from_message_success():
         mock_from_file.return_value = mock_movie
 
         # Call the method
-        service = DoviConversionService.from_message(message)
+        service = DoviConversionService.from_message(message, dovi_service_config)
 
         # Verify the service was created
         assert isinstance(service, DoviConversionService)
         mock_file_from_message.assert_called_once_with(message)
         mock_from_file.assert_called_once_with(mock_file)
-        mock_tmp_dir.mkdir.assert_called_once_with(exist_ok=True)
+        mock_tmp_dir.mkdir.assert_called_once_with(exist_ok=True, parents=True)
 
 
-def test_from_message_no_movie_found():
+def test_from_message_no_movie_found(dovi_service_config):
     """Test creating service from a message - no movie found case."""
     # Mock the message
     message = {"Name": "Missing Movie", "Year": "2023"}
 
     with pytest.raises(WebhookWorkerError) as exc_info:
-        DoviConversionService.from_message(message)
+        DoviConversionService.from_message(message, dovi_service_config)
 
     assert str(exc_info.value) == "No video found for 'Missing Movie'"
 

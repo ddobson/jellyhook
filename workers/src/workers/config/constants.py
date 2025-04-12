@@ -3,7 +3,7 @@ import os
 DEBUG = bool(int(os.getenv("DEBUG", "0")))
 MOVIE_PATH = os.getenv("MOVIE_PATH", "/data/media/movies")
 STANDUP_PATH = os.getenv("STANDUP_PATH", "/data/media/stand-up")
-MEDIA_PATHS = [MOVIE_PATH, STANDUP_PATH]
+MEDIA_PATHS = (MOVIE_PATH, STANDUP_PATH)
 JELLYHOOK_CONFIG_PATH = os.getenv("JELLYHOOK_CONFIG_PATH", "/config/jellyhook.json")
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
