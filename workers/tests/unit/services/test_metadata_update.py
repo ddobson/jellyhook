@@ -19,12 +19,9 @@ def test_metadata_update_service_init_from_message(
     mock_movie.full_path = file_path
     mock_movie.full_title = "Bobby Guy (2023)"
     mock_from_file.return_value = mock_movie
-    
+
     # Create service config
-    service_config = {
-        "paths": [],
-        "patterns": []
-    }
+    service_config = {"paths": [], "patterns": []}
 
     # Execute
     service = MetadataUpdateService.from_message(mock_message_standup, service_config)

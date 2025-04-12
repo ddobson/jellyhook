@@ -1,6 +1,6 @@
 import json
 import pathlib
-from typing import Dict, Any
+from typing import Any, Dict
 from unittest import mock
 
 import pytest
@@ -13,9 +13,7 @@ from workers.services.dovi_conversion import DoviConversionService
 @pytest.fixture
 def dovi_service_config() -> Dict[str, Any]:
     """Create a test configuration for the Dolby Vision conversion service."""
-    return {
-        "temp_dir": "/tmp/dovi_conversion"
-    }
+    return {"temp_dir": "/tmp/dovi_conversion"}
 
 
 @pytest.fixture
