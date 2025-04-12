@@ -68,7 +68,7 @@ class MetadataUpdateService(ServiceBase):
 
         # Update the metadata
         self.update_metadata()
-        logger.info(f"Metadata update complete for '{self.movie.full_title}'")
+        logger.info(f"Success! Metadata update complete for '{self.movie.full_title}'")
 
     def find_matching_rules(self) -> None:
         """Find all rules that match this media item.

@@ -10,7 +10,7 @@ import pika.spec
 
 from workers import config, utils
 from workers.logger import logger
-from workers.orchestrator import process_webhook_message
+from workers.services.orchestrator import process_webhook_message
 
 
 class MessageConsumer:

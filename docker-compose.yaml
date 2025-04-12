@@ -52,6 +52,9 @@ services:
       - type: bind
         source: /Volumes/data
         target: /data
+      - type: bind
+        source: /Volumes/appdata/jellyhook/tmp
+        target: /data/tmp
     networks:
       - jellyhook
     depends_on:
