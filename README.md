@@ -8,6 +8,9 @@ A microservice architecture for processing Jellyfin media server events via webh
 - **Asynchronous Processing**: Decoupled architecture using RabbitMQ for reliable message queuing
 - **Media Processing**: Specialized handlers for different Jellyfin events
 - **Dolby Vision Conversion**: Automatic conversion from Dolby Vision Profile 7.x to 8.x format
+- **User Configuration**: Support for custom webhook and service configuration via YAML/JSON
+- **Prioritized Services**: Execute services in configurable priority order 
+- **Metadata Management**: Configurable metadata updates based on file paths or content patterns
 - **Multi-platform Support**: Docker images for both ARM64 and AMD64 architectures
 
 ## Overview
@@ -28,11 +31,16 @@ jellyhook/
 │   └── tests/            # API tests
 ├── workers/              # Worker service
 │   ├── src/workers/      # Worker source code
-│   │   ├── hooks/        # Message processors
+│   │   ├── clients/      # Client implementations (Jellyfin, RabbitMQ)
+│   │   ├── config/       # Configuration handling
 │   │   ├── services/     # Service implementations
 │   │   └── ...
 │   └── tests/            # Worker tests
-└── item_added_hook.example.json # Example webhook payload
+│       ├── component/    # Component/integration tests
+│       └── unit/         # Unit tests
+└── docs/examples/        # Example configuration files
+    ├── jellyhook.example.json    # Example webhook configuration
+    └── jellyhook.example.yaml    # Example webhook configuration
 ```
 
 ## Development
@@ -119,7 +127,7 @@ make push_all ACCOUNT=your-github-username TAG=v1.0.0
 
 ### Configuration
 
-Configure the application using environment variables:
+Configure the application using environment variables and configuration files:
 
 #### API Service
 - `FLASK_ENV`: Set to `development` or `production`
@@ -139,6 +147,32 @@ Configure the application using environment variables:
 - `STANDUP_PATH`: Path to stand-up comedy files (default: "/data/media/stand-up")
 - `TEMP_DIR`: Directory for temporary files (default: "/data/tmp")
 - `WORKER_ENV`: Worker environment (default: "development")
+
+#### User Configuration File
+
+The worker service can be configured using a YAML or JSON file:
+
+```yaml
+worker:
+  webhooks:
+    item_added:  # Webhook type
+      enabled: true  # Enable/disable this webhook
+      queue: jellyfin:item_added  # RabbitMQ queue name
+      services:  # List of services to execute for this webhook
+        - name: metadata_update  # Service name
+          enabled: true  # Enable/disable this service
+          priority: 10  # Lower numbers run first
+          config:  # Service-specific configuration
+            # Configuration options for metadata updates
+        
+        - name: dovi_conversion
+          enabled: true
+          priority: 20
+          config:
+            # Configuration options for Dolby Vision conversion
+```
+
+Place this file at `~/.config/jellyhook/jellyhook.yaml` or specify a custom path with the `JELLYHOOK_CONFIG_PATH` environment variable.
 
 ## Code Standards
 
