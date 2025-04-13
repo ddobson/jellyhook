@@ -1,6 +1,5 @@
 from unittest import mock
 
-import pika
 import pytest
 
 from workers.clients.rabbitmq import MessageConsumer
