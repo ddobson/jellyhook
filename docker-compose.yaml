@@ -46,13 +46,15 @@ services:
       - type: bind
         source: ./workers
         target: /app
-        read_only: true
       - type: bind
         source: /Volumes/appdata/jellyhook
         target: /config
       - type: bind
         source: /Volumes/data
         target: /data
+      - type: bind
+        source: /Volumes/data/jellyhook/tmp
+        target: /data/tmp
     networks:
       - jellyhook
     depends_on:
@@ -61,7 +63,6 @@ services:
       DEBUG: "1"
       MOVIE_PATH: "/data/media/movies"
       STANDUP_PATH: "/data/media/stand-up"
-      TEMP_DIR: "/data/tmp"
       RABBITMQ_HOST: rabbitmq
       WORKER_ENV: development
       PYDEVD_DISABLE_FILE_VALIDATION: "0"
@@ -69,4 +70,4 @@ services:
       JELLYFIN_PORT: "8096"  # Default Jellyfin port
       JELLYFIN_HOST: "http://homelab.local"
       JELLYFIN_USER_ID: "" # Add your Jellyfin user ID here
-      METADATA_CONFIG_PATH: "/config/metadata_config.json"
+      JELLYHOOK_CONFIG_PATH: "/config/jellyhook.json"

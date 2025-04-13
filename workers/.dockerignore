@@ -16,6 +16,7 @@
 .Python
 **/env/
 **/venv/
+**/.venv/
 **/ENV/
 **/.pytest_cache/
 **/.coverage

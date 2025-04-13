@@ -1,12 +1,25 @@
-import json
 import pathlib
 import subprocess
 import time
 from collections.abc import Callable
-
-import yaml
+from threading import Lock
 
 from workers.logger import logger
+
+
+class SingletonMeta(type):
+    """A thread-safe implementation of Singleton."""
+
+    _instances = {}
+    _lock = Lock()
+
+    def __call__(cls, *args, **kwargs):
+        """Override the __call__ method to control instance creation."""
+        with cls._lock:
+            if cls not in cls._instances:
+                instance = super().__call__(*args, **kwargs)
+                cls._instances[cls] = instance
+        return cls._instances[cls]
 
 
 def timer(func: Callable) -> Callable:
@@ -117,56 +130,3 @@ def clean_dir(root: pathlib.Path) -> None:
             p.unlink()
 
     root.rmdir()
-
-
-def ack_message(channel, delivery_tag: int, completed: bool) -> None:
-    """Acknowledge a message.
-
-    Note: that `channel` must be the same pika channel instance via which
-    the message being ACKed was retrieved (AMQP protocol constraint).
-
-    Args:
-        channel (pika.channel.Channel): The channel to acknowledge the message on.
-        delivery_tag (int): The delivery tag of the message to acknowledge.
-        completed (bool): Whether the message was successfully processed.
-    """
-    if not channel.is_open:
-        logger.info(
-            f"Unable to acknowledge message with delivery tag: {delivery_tag}. Connection closed.",
-        )
-        return
-
-    if completed:
-        channel.basic_ack(delivery_tag)
-    else:
-        channel.basic_nack(delivery_tag, requeue=False)
-
-    logger.info(f"Acknowledged message with delivery tag: {delivery_tag}")
-
-
-def load_config_file(filename: str, default: dict | None = None) -> dict:
-    """Load a JSON or YAML configuration file.
-
-    Args:
-        filename (str): The path to the configuration file.
-        default (dict, None): Default value if file doesn't exist. Defaults to None.
-
-    Returns:
-        dict: The loaded configuration data.
-    """
-    if not default:
-        default = {}
-
-    try:
-        config_path = pathlib.Path(filename)
-        if not config_path.exists():
-            return default
-
-        with open(config_path, "r") as f:
-            if config_path.suffix.lower() in [".yml", ".yaml"]:
-                return yaml.safe_load(f)
-            return json.load(f)
-
-    except (json.JSONDecodeError, yaml.YAMLError, IOError) as e:
-        logger.info(f"Error loading config file {filename}: {e}")
-        return default

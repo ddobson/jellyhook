@@ -20,8 +20,11 @@ def test_metadata_update_service_init_from_message(
     mock_movie.full_title = "Bobby Guy (2023)"
     mock_from_file.return_value = mock_movie
 
+    # Create service config
+    service_config = {"paths": [], "patterns": []}
+
     # Execute
-    service = MetadataUpdateService.from_message(mock_message_standup)
+    service = MetadataUpdateService.from_message(mock_message_standup, service_config)
 
     # Assert
     assert service.item_id == "123456"
@@ -31,23 +34,18 @@ def test_metadata_update_service_init_from_message(
 
 
 @mock.patch("workers.clients.jellyfin.client")
-@mock.patch(
-    "workers.services.metadata_update.METADATA_RULES",
-    {
-        "paths": [
-            {
-                "path": "/data/media/stand-up",
-                "genres": {"new_genres": ["Stand-Up"], "replace_existing": True},
-            }
-        ],
-        "rules": [],
-    },
-)
 def test_find_matching_rules_path_match(mock_client, mock_movie_standup):
     # Setup
+    path_rules = [
+        {
+            "path": "/data/media/stand-up",
+            "genres": {"new_genres": ["Stand-Up"], "replace_existing": True},
+        }
+    ]
     service = MetadataUpdateService(
         movie=mock_movie_standup,
         item_id="123456",
+        path_rules=path_rules,
     )
 
     # Execute
@@ -60,23 +58,18 @@ def test_find_matching_rules_path_match(mock_client, mock_movie_standup):
 
 
 @mock.patch("workers.clients.jellyfin.client")
-@mock.patch(
-    "workers.services.metadata_update.METADATA_RULES",
-    {
-        "paths": [
-            {
-                "path": "/data/media/stand-up",
-                "genres": {"new_genres": ["Stand-Up"], "replace_existing": True},
-            }
-        ],
-        "rules": [],
-    },
-)
 def test_find_matching_rules_path_no_match(mock_client, mock_movie_anime):
     # Setup
+    path_rules = [
+        {
+            "path": "/data/media/stand-up",
+            "genres": {"new_genres": ["Stand-Up"], "replace_existing": True},
+        }
+    ]
     service = MetadataUpdateService(
         movie=mock_movie_anime,
         item_id="789012",
+        path_rules=path_rules,
     )
 
     # Execute
@@ -87,25 +80,20 @@ def test_find_matching_rules_path_no_match(mock_client, mock_movie_anime):
 
 
 @mock.patch("workers.clients.jellyfin.client")
-@mock.patch(
-    "workers.services.metadata_update.METADATA_RULES",
-    {
-        "paths": [],
-        "rules": [
-            {
-                "match_pattern": ".*perform.*",
-                "match_field": "Overview",
-                "case_insensitive": True,
-                "genres": {"new_genres": ["Live Performance"], "replace_existing": False},
-            }
-        ],
-    },
-)
 def test_find_matching_rules_pattern_match(mock_client, mock_movie_standup):
     # Setup
+    pattern_rules = [
+        {
+            "match_pattern": ".*perform.*",
+            "match_field": "Overview",
+            "case_insensitive": True,
+            "genres": {"new_genres": ["Live Performance"], "replace_existing": False},
+        }
+    ]
     service = MetadataUpdateService(
         movie=mock_movie_standup,
         item_id="123456",
+        pattern_rules=pattern_rules,
         item_data={"Overview": "The comedian performs a set at Boston's Symphony Hall."},
     )
 
@@ -119,25 +107,20 @@ def test_find_matching_rules_pattern_match(mock_client, mock_movie_standup):
 
 
 @mock.patch("workers.clients.jellyfin.client")
-@mock.patch(
-    "workers.services.metadata_update.METADATA_RULES",
-    {
-        "paths": [],
-        "rules": [
-            {
-                "match_pattern": ".*concert.*",
-                "match_field": "Overview",
-                "case_insensitive": True,
-                "genres": {"new_genres": ["Live Performance"], "replace_existing": False},
-            }
-        ],
-    },
-)
 def test_find_matching_rules_pattern_no_match(mock_client, mock_movie_standup):
     # Setup
+    pattern_rules = [
+        {
+            "match_pattern": ".*concert.*",
+            "match_field": "Overview",
+            "case_insensitive": True,
+            "genres": {"new_genres": ["Live Performance"], "replace_existing": False},
+        }
+    ]
     service = MetadataUpdateService(
         movie=mock_movie_standup,
         item_id="123456",
+        pattern_rules=pattern_rules,
         item_data={"Overview": "The comedian performs a set at Boston's Symphony Hall."},
     )
 
@@ -418,18 +401,6 @@ def test_exec_without_matching_rules(
     mock_update_metadata.assert_not_called()
 
 
-@mock.patch(
-    "workers.services.metadata_update.METADATA_RULES",
-    {
-        "paths": [
-            {
-                "path": "/data/media/stand-up",
-                "genres": {"new_genres": ["Stand-Up"], "replace_existing": True},
-            }
-        ],
-        "rules": [],
-    },
-)
 @mock.patch("workers.clients.jellyfin.client.jellyfin")
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
@@ -445,7 +416,15 @@ def test_end_to_end_standup_path(
     mock_from_file.return_value = mock_movie
 
     # Execute
-    service = MetadataUpdateService.from_message(mock_message_standup)
+    service_config = {
+        "paths": [
+            {
+                "path": "/data/media/stand-up",
+                "genres": {"new_genres": ["Stand-Up"], "replace_existing": True},
+            }
+        ]
+    }
+    service = MetadataUpdateService.from_message(mock_message_standup, service_config)
     service.exec()
 
     # Assert - should match path rule and update genres
@@ -455,20 +434,6 @@ def test_end_to_end_standup_path(
     )
 
 
-@mock.patch(
-    "workers.services.metadata_update.METADATA_RULES",
-    {
-        "paths": [],
-        "rules": [
-            {
-                "match_pattern": ".*perform.*",
-                "match_field": "Overview",
-                "case_insensitive": True,
-                "genres": {"new_genres": ["Live Performance"], "replace_existing": False},
-            }
-        ],
-    },
-)
 @mock.patch("workers.clients.jellyfin.client.jellyfin")
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
@@ -484,7 +449,19 @@ def test_end_to_end_pattern_match(
     mock_from_file.return_value = mock_movie
 
     # Execute
-    service = MetadataUpdateService.from_message(mock_message_standup)
+    # Add Overview field to mock_message_standup for pattern matching
+    mock_message_standup["Overview"] = "The comedian performs a set at Boston's Symphony Hall."
+    service_config = {
+        "patterns": [
+            {
+                "match_pattern": ".*perform.*",
+                "match_field": "Overview",
+                "case_insensitive": True,
+                "genres": {"new_genres": ["Live Performance"], "replace_existing": False},
+            }
+        ]
+    }
+    service = MetadataUpdateService.from_message(mock_message_standup, service_config)
     service.exec()
 
     # Assert - should match pattern rule and add genre without replacing
