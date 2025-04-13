@@ -1,6 +1,6 @@
 import json
 import pathlib
-from typing import Any, Dict, List
+from typing import Any
 
 import yaml
 
@@ -15,7 +15,7 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
 
     def __init__(self, webhook_config: dict) -> None:
         """Initialize the configuration manager."""
-        self.config: Dict[str, Any] = webhook_config
+        self.config: dict[str, Any] = webhook_config
 
     def get_enabled_webhooks(self) -> dict:
         """Get a list of enabled webhooks.
@@ -30,7 +30,7 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
             if config.get("enabled", False)
         }
 
-    def get_enabled_services(self, webhook_id: str) -> List[Dict[str, Any]]:
+    def get_enabled_services(self, webhook_id: str) -> list[dict[str, Any]]:
         """Get enabled services for a webhook.
 
         Args:
@@ -52,7 +52,7 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
 
         return sorted(enabled_services, key=lambda s: s.get("priority", 100))
 
-    def get_webhook_config(self, webhook_id: str) -> Dict[str, Any]:
+    def get_webhook_config(self, webhook_id: str) -> dict[str, Any]:
         """Get configuration for a specific webhook.
 
         Args:
@@ -63,7 +63,7 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
         """
         return self.config.get("webhooks", {}).get(webhook_id, {})
 
-    def get_service_config(self, webhook_id: str, service_name: str) -> Dict[str, Any]:
+    def get_service_config(self, webhook_id: str, service_name: str) -> dict[str, Any]:
         """Get configuration for a specific service within a webhook.
 
         Args:

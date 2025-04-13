@@ -1,6 +1,6 @@
 import pathlib
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from jellyfin_apiclient_python.exceptions import HTTPException
 
@@ -22,11 +22,11 @@ class MetadataUpdateService(ServiceBase):
         self,
         movie: Movie,
         item_id: str,
-        path_rules: List[str] = None,
-        pattern_rules: List[str] = None,
-        original_genres: List[str] = None,
-        original_tags: List[str] = None,
-        item_data: Dict[str, Any] = None,
+        path_rules: list[str] = None,
+        pattern_rules: list[str] = None,
+        original_genres: list[str] = None,
+        original_tags: list[str] = None,
+        item_data: dict[str, Any] = None,
     ) -> None:
         """Initialize the MetadataUpdateService.
 
@@ -102,7 +102,7 @@ class MetadataUpdateService(ServiceBase):
                 self.matching_rules.append(pattern_rule)
                 logger.info(f"Matched pattern rule: {pattern} against {field_name}")
 
-    def calculate_new_genres(self) -> List[str]:
+    def calculate_new_genres(self) -> list[str]:
         """Calculate the new genres based on matching rules and original genres.
 
         Returns:
@@ -129,7 +129,7 @@ class MetadataUpdateService(ServiceBase):
 
         return new_genres
 
-    def calculate_new_tags(self) -> List[str]:
+    def calculate_new_tags(self) -> list[str]:
         """Calculate the new tags based on matching rules and original tags.
 
         Returns:

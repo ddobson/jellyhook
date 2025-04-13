@@ -7,7 +7,7 @@ based on configuration for a specific webhook.
 import importlib
 import json
 from pathlib import Path
-from typing import Any, List, Optional, Set
+from typing import Any
 
 from workers import utils
 from workers.config import WorkerConfig
@@ -40,7 +40,7 @@ class ServiceOrchestrator:
             webhook_id: The ID of the webhook to orchestrate services for.
         """
         self.webhook_id = webhook_id
-        self.temp_dirs: Set[Path] = set()
+        self.temp_dirs: set[Path] = set()
         self.worker_config = WorkerConfig()
 
     def is_webhook_enabled(self) -> bool:
@@ -51,7 +51,7 @@ class ServiceOrchestrator:
         """
         return self.webhook_id in self.worker_config.get_enabled_webhooks()
 
-    def get_enabled_services(self) -> List[dict[str, Any]]:
+    def get_enabled_services(self) -> list[dict[str, Any]]:
         """Get the enabled services for this webhook.
 
         Returns:
@@ -62,7 +62,7 @@ class ServiceOrchestrator:
 
     def create_service_instance(
         self, service_name: str, message: dict[str, Any], service_config: dict[str, Any]
-    ) -> Optional[ServiceBase]:
+    ) -> ServiceBase | None:
         """Create an instance of a service.
 
         Args:
