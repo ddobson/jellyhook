@@ -40,6 +40,7 @@ def message_consumer(mock_webhook_configs):
         consumer.channels = {webhook_id: mock.MagicMock() for webhook_id in mock_webhook_configs}
         yield consumer
 
+
 def test_initialization(mock_webhook_configs):
     """Test MessageConsumer initialization."""
     with mock.patch("pika.credentials.PlainCredentials") as mock_credentials:
@@ -56,6 +57,7 @@ def test_initialization(mock_webhook_configs):
 
         # Verify credentials setup
         mock_credentials.assert_called_once()
+
 
 def test_connect(message_consumer, mock_webhook_configs):
     """Test connect method creates connection and channels."""
@@ -86,6 +88,7 @@ def test_connect(message_consumer, mock_webhook_configs):
         assert mock_channel.basic_qos.call_count == len(mock_webhook_configs)
         assert mock_channel.basic_consume.call_count == len(mock_webhook_configs)
 
+
 def test_channel_consumer_thread(message_consumer):
     """Test the _channel_consumer_thread method."""
     mock_channel = mock.MagicMock()
@@ -113,6 +116,7 @@ def test_channel_consumer_thread(message_consumer):
 
         # Verify error was logged
         mock_logger.error.assert_called_once()
+
 
 def test_on_message_callback(message_consumer):
     """Test the _on_message_callback method."""
@@ -144,6 +148,7 @@ def test_on_message_callback(message_consumer):
         # Verify thread was started and added to threads list
         mock_thread.start.assert_called_once()
         assert mock_thread in message_consumer.threads
+
 
 def test_process_message(message_consumer):
     """Test the _process_message method."""
@@ -191,6 +196,7 @@ def test_process_message(message_consumer):
         # Verify negative acknowledgment
         mock_partial.assert_called_once()
         message_consumer.connection.add_callback_threadsafe.assert_called_once()
+
 
 def test_start(message_consumer):
     """Test the start method."""
@@ -241,6 +247,7 @@ def test_start(message_consumer):
 
         # Verify stop was called
         mock_stop.assert_called_once()
+
 
 def test_stop(message_consumer):
     """Test the stop method."""

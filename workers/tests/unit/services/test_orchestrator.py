@@ -7,7 +7,6 @@ from unittest import mock
 import pytest
 
 from workers.config import WorkerConfig
-from workers.errors import WebhookWorkerError
 from workers.services.dovi_conversion import DoviConversionService
 from workers.services.orchestrator import ServiceOrchestrator, process_webhook_message
 from workers.services.service_base import ServiceBase
@@ -71,13 +70,15 @@ def mock_service():
 def orchestrator(mock_config_data):
     """Create a service orchestrator for testing."""
     # Create a new WorkerConfig and reset the singleton
-    with mock.patch.dict("workers.utils.SingletonMeta._instances", {}, clear=True):
+    with (
+        mock.patch.dict("workers.utils.SingletonMeta._instances", {}, clear=True),
         # Mock WorkerConfig.__init__ to not require config
-        with mock.patch.object(WorkerConfig, "__init__", return_value=None):
-            orchestrator = ServiceOrchestrator("item_added")
-            # Set mock config manually
-            orchestrator.worker_config = mock.MagicMock()
-            return orchestrator
+        mock.patch.object(WorkerConfig, "__init__", return_value=None),
+    ):
+        orchestrator = ServiceOrchestrator("item_added")
+        # Set mock config manually
+        orchestrator.worker_config = mock.MagicMock()
+        return orchestrator
 
 
 def test_is_webhook_enabled(orchestrator):
@@ -310,17 +311,19 @@ def test_process_webhook_service_creation_error(orchestrator):
     orchestrator.worker_config.get_enabled_services.return_value = enabled_services
 
     # Mock create_service_instance to return None (error)
-    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=None):
-        with mock.patch("workers.services.orchestrator.logger") as mock_logger:
-            result = orchestrator.process_webhook(message)
+    with (
+        mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=None),
+        mock.patch("workers.services.orchestrator.logger") as mock_logger,
+    ):
+        result = orchestrator.process_webhook(message)
 
-            # Service not created, but not critical failure
-            assert result is True
+        # Service not created, but not critical failure
+        assert result is True
 
-            # Info log about service not being created
-            mock_logger.info.assert_any_call(
-                "Service metadata_update was not created for this message - skipping"
-            )
+        # Info log about service not being created
+        mock_logger.info.assert_any_call(
+            "Service metadata_update was not created for this message - skipping"
+        )
 
 
 def test_process_webhook_service_execution_error(orchestrator):
@@ -362,24 +365,24 @@ def test_process_webhook_service_execution_error(orchestrator):
             return dovi_service
         return None
 
-    with mock.patch.object(
-        ServiceOrchestrator, "create_service_instance", side_effect=mock_create_service
+    with (
+        mock.patch.object(
+            ServiceOrchestrator, "create_service_instance", side_effect=mock_create_service
+        ),
+        mock.patch("workers.services.orchestrator.logger") as mock_logger,
     ):
-        with mock.patch("workers.services.orchestrator.logger") as mock_logger:
-            result = orchestrator.process_webhook(message)
+        result = orchestrator.process_webhook(message)
 
-            # Metadata errors are not critical, but dovi errors are
-            assert result is False
+        # Metadata errors are not critical, but dovi errors are
+        assert result is False
 
-            # Both services attempted execution
-            metadata_service.exec.assert_called_once()
-            dovi_service.exec.assert_called_once()
+        # Both services attempted execution
+        metadata_service.exec.assert_called_once()
+        dovi_service.exec.assert_called_once()
 
-            # Logger error calls for each service failure
-            mock_logger.error.assert_any_call(
-                "Service metadata_update failed: Metadata service failed"
-            )
-            mock_logger.error.assert_any_call("Service dovi_conversion failed: Dovi service failed")
+        # Logger error calls for each service failure
+        mock_logger.error.assert_any_call("Service metadata_update failed: Metadata service failed")
+        mock_logger.error.assert_any_call("Service dovi_conversion failed: Dovi service failed")
 
 
 def test_cleanup(orchestrator):
@@ -387,18 +390,20 @@ def test_cleanup(orchestrator):
     # Create temp directories
     orchestrator.temp_dirs = {Path("/tmp/service1"), Path("/tmp/service2")}
 
-    # Mock utils.clean_dir
-    with mock.patch("workers.utils.clean_dir") as mock_clean_dir:
-        with mock.patch("workers.services.orchestrator.logger") as mock_logger:
-            orchestrator.cleanup()
+    with (
+        mock.patch("workers.utils.clean_dir") as mock_clean_dir,
+        mock.patch("workers.services.orchestrator.logger") as mock_logger,
+    ):
+        # Mock utils.clean_dir
+        orchestrator.cleanup()
 
-            # Each directory should be cleaned
-            assert mock_clean_dir.call_count == 2
-            mock_clean_dir.assert_any_call(Path("/tmp/service1"))
-            mock_clean_dir.assert_any_call(Path("/tmp/service2"))
+        # Each directory should be cleaned
+        assert mock_clean_dir.call_count == 2
+        mock_clean_dir.assert_any_call(Path("/tmp/service1"))
+        mock_clean_dir.assert_any_call(Path("/tmp/service2"))
 
-            # Logger info calls
-            assert mock_logger.info.call_count == 2
+        # Logger info calls
+        assert mock_logger.info.call_count == 2
 
 
 def test_cleanup_error(orchestrator):
@@ -407,17 +412,17 @@ def test_cleanup_error(orchestrator):
     orchestrator.temp_dirs = {Path("/tmp/service1"), Path("/tmp/service2")}
 
     # Mock utils.clean_dir to raise exception
-    with mock.patch(
-        "workers.utils.clean_dir", side_effect=FileNotFoundError("Directory not found")
+    with (
+        mock.patch("workers.utils.clean_dir", side_effect=FileNotFoundError("Directory not found")),
+        mock.patch("workers.services.orchestrator.logger") as mock_logger,
     ):
-        with mock.patch("workers.services.orchestrator.logger") as mock_logger:
-            orchestrator.cleanup()
+        orchestrator.cleanup()
 
-            # Logger error calls
-            assert mock_logger.error.call_count == 2
-            mock_logger.error.assert_any_call(
-                "Failed to clean temporary directory /tmp/service1: Directory not found"
-            )
+        # Logger error calls
+        assert mock_logger.error.call_count == 2
+        mock_logger.error.assert_any_call(
+            "Failed to clean temporary directory /tmp/service1: Directory not found"
+        )
 
 
 def test_process_webhook_message_success():
@@ -429,21 +434,23 @@ def test_process_webhook_message_success():
     mock_orchestrator = mock.MagicMock()
     mock_orchestrator.process_webhook.return_value = True
 
-    with mock.patch(
-        "workers.services.orchestrator.ServiceOrchestrator", return_value=mock_orchestrator
-    ):
-        with mock.patch(
+    with (
+        mock.patch(
+            "workers.services.orchestrator.ServiceOrchestrator", return_value=mock_orchestrator
+        ),
+        mock.patch(
             "workers.services.orchestrator.json.loads",
             return_value={"Name": "Test Movie", "Year": 2023},
-        ):
-            result = process_webhook_message(webhook_id, message_body)
+        ),
+    ):
+        result = process_webhook_message(webhook_id, message_body)
 
-            # The message was processed successfully
-            assert result is True
+        # The message was processed successfully
+        assert result is True
 
-            # The orchestrator was created with the correct webhook_id
-            assert mock_orchestrator.process_webhook.called
-            assert mock_orchestrator.cleanup.called
+        # The orchestrator was created with the correct webhook_id
+        assert mock_orchestrator.process_webhook.called
+        assert mock_orchestrator.cleanup.called
 
 
 def test_process_webhook_message_error():
@@ -452,16 +459,18 @@ def test_process_webhook_message_error():
     message_body = b"invalid json"
 
     # Mock json.loads to raise JSONDecodeError
-    with mock.patch(
-        "workers.services.orchestrator.json.loads",
-        side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
+    with (
+        mock.patch(
+            "workers.services.orchestrator.json.loads",
+            side_effect=json.JSONDecodeError("Invalid JSON", "", 0),
+        ),
+        mock.patch("workers.services.orchestrator.logger") as mock_logger,
     ):
-        with mock.patch("workers.services.orchestrator.logger") as mock_logger:
-            result = process_webhook_message(webhook_id, message_body)
+        result = process_webhook_message(webhook_id, message_body)
 
-            # The message was not processed successfully
-            assert result is False
+        # The message was not processed successfully
+        assert result is False
 
-            # Logger error was called
-            mock_logger.error.assert_called_once()
-            assert "Failed to process webhook item_added" in mock_logger.error.call_args[0][0]
+        # Logger error was called
+        mock_logger.error.assert_called_once()
+        assert "Failed to process webhook item_added" in mock_logger.error.call_args[0][0]
