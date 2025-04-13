@@ -130,28 +130,3 @@ def clean_dir(root: pathlib.Path) -> None:
             p.unlink()
 
     root.rmdir()
-
-
-def ack_message(channel, delivery_tag: int, completed: bool) -> None:
-    """Acknowledge a message.
-
-    Note: that `channel` must be the same pika channel instance via which
-    the message being ACKed was retrieved (AMQP protocol constraint).
-
-    Args:
-        channel (pika.channel.Channel): The channel to acknowledge the message on.
-        delivery_tag (int): The delivery tag of the message to acknowledge.
-        completed (bool): Whether the message was successfully processed.
-    """
-    if not channel.is_open:
-        logger.info(
-            f"Unable to acknowledge message with delivery tag: {delivery_tag}. Connection closed.",
-        )
-        return
-
-    if completed:
-        channel.basic_ack(delivery_tag)
-    else:
-        channel.basic_nack(delivery_tag, requeue=False)
-
-    logger.info(f"Acknowledged message with delivery tag: {delivery_tag}")

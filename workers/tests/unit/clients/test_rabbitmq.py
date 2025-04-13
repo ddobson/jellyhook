@@ -175,7 +175,9 @@ def test_process_message_success(message_consumer):
         mock_process.assert_called_once_with(webhook_id, mock_body)
 
         # Verify functools.partial was called for acknowledgment
-        mock_partial.assert_called_once()
+        mock_partial.assert_called_once_with(
+            message_consumer._ack_message, mock_channel, delivery_tag, True
+        )
         message_consumer.connection.add_callback_threadsafe.assert_called_once()
 
 
@@ -206,7 +208,9 @@ def test_process_message_failure(message_consumer):
         mock_logger.error.assert_called_once()
 
         # Verify negative acknowledgment
-        mock_partial.assert_called_once()
+        mock_partial.assert_called_once_with(
+            message_consumer._ack_message, mock_channel, delivery_tag, False
+        )
         message_consumer.connection.add_callback_threadsafe.assert_called_once()
 
 
@@ -294,3 +298,44 @@ def test_stop(message_consumer):
 
         # Verify logging
         assert mock_logger.info.call_count >= 2
+
+
+def test_ack_message_acknowledged(message_consumer):
+    """Test that ack_message calls basic_ack when completed is True."""
+    mock_channel = mock.MagicMock()
+    mock_channel.is_open = True
+
+    with mock.patch("workers.clients.rabbitmq.logger") as mock_logger:
+        message_consumer._ack_message(mock_channel, 123, True)
+
+    mock_channel.basic_ack.assert_called_once_with(123)
+    mock_channel.basic_nack.assert_not_called()
+    mock_logger.info.assert_called_once_with("Acknowledged message with delivery tag: 123")
+
+
+def test_ack_message_negative_acknowledged(message_consumer):
+    """Test that ack_message calls basic_nack when completed is False."""
+    mock_channel = mock.MagicMock()
+    mock_channel.is_open = True
+
+    with mock.patch("workers.clients.rabbitmq.logger") as mock_logger:
+        message_consumer._ack_message(mock_channel, 456, False)
+
+    mock_channel.basic_nack.assert_called_once_with(456, requeue=False)
+    mock_channel.basic_ack.assert_not_called()
+    mock_logger.info.assert_called_once_with("Acknowledged message with delivery tag: 456")
+
+
+def test_ack_message_channel_closed(message_consumer):
+    """Test that ack_message logs but does not call ack/nack when channel is closed."""
+    mock_channel = mock.MagicMock()
+    mock_channel.is_open = False
+
+    with mock.patch("workers.clients.rabbitmq.logger") as mock_logger:
+        message_consumer._ack_message(mock_channel, 789, True)
+
+    mock_channel.basic_ack.assert_not_called()
+    mock_channel.basic_nack.assert_not_called()
+    mock_logger.info.assert_any_call(
+        "Unable to acknowledge message with delivery tag: 789. Connection closed."
+    )

@@ -105,9 +105,9 @@ class DoviConversionService(ServiceBase):
 
         Returns:
             str: The path to the extracted video stream.
-
         """
         video_path = f"{self.tmp_dir}/video.hevc"
+        # TODO: Change this command to use ffmpeg instead of mkvextract for improved performance
         cmd = f'mkvextract "{self.movie.full_path}" tracks "0:{video_path}"'
         utils.run_command(cmd, log_output=True, log_err=True)
 
@@ -227,6 +227,8 @@ class DoviConversionService(ServiceBase):
         movie_file = cls.file_from_message(message)
         movie = Movie.from_file(movie_file)
 
+        # Create the movie-specific temp directory
         tmp_dir = pathlib.Path(f"{temp_directory}/{movie.folder_title}")
         tmp_dir.mkdir(exist_ok=True, parents=True)
+        logger.info(f"Using temporary directory: {tmp_dir}")
         return cls(movie, tmp_dir)

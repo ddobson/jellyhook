@@ -174,12 +174,37 @@ class MessageConsumer:
             completed = process_webhook_message(webhook_id, body)
 
             # Acknowledge the message
-            cb = functools.partial(utils.ack_message, channel, delivery_tag, completed)
+            cb = functools.partial(self._ack_message, channel, delivery_tag, completed)
             if self.connection and self.connection.is_open:
                 self.connection.add_callback_threadsafe(cb)
         except Exception as e:
             logger.error(f"Error processing message for webhook {webhook_id}: {e}")
             # Negatively acknowledge the message
-            cb = functools.partial(utils.ack_message, channel, delivery_tag, False)
+            cb = functools.partial(self._ack_message, channel, delivery_tag, False)
             if self.connection and self.connection.is_open:
                 self.connection.add_callback_threadsafe(cb)
+
+    def _ack_message(self, channel, delivery_tag: int, completed: bool) -> None:
+        """Acknowledge a message.
+
+        Note: that `channel` must be the same pika channel instance via which
+        the message being ACKed was retrieved (AMQP protocol constraint).
+
+        Args:
+            channel (pika.channel.Channel): The channel to acknowledge the message on.
+            delivery_tag (int): The delivery tag of the message to acknowledge.
+            completed (bool): Whether the message was successfully processed.
+        """
+        if not channel.is_open:
+            logger.info(
+                f"Unable to acknowledge message with delivery tag: {delivery_tag}. "
+                "Connection closed.",
+            )
+            return
+
+        if completed:
+            channel.basic_ack(delivery_tag)
+        else:
+            channel.basic_nack(delivery_tag, requeue=False)
+
+        logger.info(f"Acknowledged message with delivery tag: {delivery_tag}")
