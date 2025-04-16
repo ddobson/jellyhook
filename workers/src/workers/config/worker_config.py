@@ -5,6 +5,7 @@ from typing import Any
 import yaml
 
 from workers import utils
+from workers.parsers import MovieNamingScheme
 
 
 class WorkerConfig(metaclass=utils.SingletonMeta):
@@ -88,7 +89,7 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
         """
         return self.config.get("general", {})
 
-    def get_naming_scheme(self, item_type: str) -> str:
+    def get_naming_scheme(self, item_type: str) -> MovieNamingScheme:
         """Get the naming configuration for the worker.
 
         Args:
@@ -113,7 +114,6 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
         worker_config = jellyhook_config.get("worker", {})
         worker._set_worker_config(worker_config)
         return worker
-
 
 
 def load_config_file(filename: str) -> dict:

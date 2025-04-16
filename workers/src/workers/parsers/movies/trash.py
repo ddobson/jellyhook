@@ -1,6 +1,9 @@
 import re
+from typing import Literal
 
 from workers.parsers.base import BaseParser
+
+TrashNamingScheme = Literal["trash"]
 
 
 class TrashMovieParser(BaseParser):

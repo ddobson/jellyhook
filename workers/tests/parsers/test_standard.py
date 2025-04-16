@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from workers.parsers.movies import StandardMovieParser

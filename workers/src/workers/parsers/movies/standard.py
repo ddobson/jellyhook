@@ -1,6 +1,9 @@
 import re
+from typing import Literal
 
 from workers.parsers.base import BaseParser
+
+StandardNamingScheme = Literal["standard"]
 
 
 class StandardMovieParser(BaseParser):

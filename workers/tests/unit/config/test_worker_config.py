@@ -1,7 +1,6 @@
 import json
 from unittest import mock
 
-import pytest
 import yaml
 
 from workers.config.worker_config import WorkerConfig, load_config_file
