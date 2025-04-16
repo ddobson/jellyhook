@@ -1,5 +1,10 @@
 {
   "worker": {
+    "general": {
+      "naming_schemes": {
+        "movie": "trash"
+      }
+    },
     "webhooks": {
       "item_added": {
         "enabled": true,
