@@ -1,5 +1,9 @@
+from pathlib import Path
+from unittest import mock
+
 import pytest
 
+from workers.models.items import Movie
 from workers.parsers.movies import StandardMovieParser
 
 
@@ -100,3 +104,22 @@ def test_standard_format(filename, expected):
     assert result.get("tmdb_id") == expected.get("tmdb_id")
     assert result.get("imdb_id") == expected.get("imdb_id")
     assert result.get("is_3d") is result.get("is_3d", False)
+
+
+def test_no_match():
+    result = StandardMovieParser.parse("random_filename.mkv")
+    assert result is None
+
+
+@mock.patch("workers.parsers.movies.StandardMovieParser.parse", wraps=StandardMovieParser.parse)
+def test_fallback_to_minimal_parsing(mock_parse):
+    # This should fall through to the fallback parser
+    movie_file = Path("Some.Random.2022.File.mkv")
+    movie = Movie.parse_movie_filename(movie_file.name, StandardMovieParser)
+
+    # Assert the parse method was called
+    mock_parse.assert_called_once_with(movie_file.name)
+
+    # Assert the parsed result
+    assert movie["title"] == "Some Random"
+    assert movie["year"] == "2022"

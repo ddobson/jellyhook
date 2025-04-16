@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -121,9 +122,15 @@ def test_no_match():
     assert result is None
 
 
-def test_fallback_to_minimal_parsing():
+@mock.patch("workers.parsers.movies.TrashMovieParser.parse", wraps=TrashMovieParser.parse)
+def test_fallback_to_minimal_parsing(mock_parse):
     # This should fall through to the fallback parser
-    movie_file = Path("Some.Random.2022.File.mkv")
+    movie_file = Path("Some Random [2022] --Extended Edition-- EAC3.mkv")
     movie = Movie.parse_movie_filename(movie_file.name, TrashMovieParser)
+
+    # Assert the parse method was called
+    mock_parse.assert_called_once_with(movie_file.name)
+
+    # Assert the parsed result
     assert movie["title"] == "Some Random"
     assert movie["year"] == "2022"
