@@ -18,11 +18,13 @@ from workers.services.service_base import ServiceBase
 SERVICE_MODULES = {
     "metadata_update": "workers.services.metadata_update",
     "dovi_conversion": "workers.services.dovi_conversion",
+    "media_track_clean": "workers.services.media_track_clean",
 }
 
 SERVICE_CLASSES = {
     "metadata_update": "MetadataUpdateService",
     "dovi_conversion": "DoviConversionService",
+    "media_track_clean": "MediaTrackCleanService",
 }
 
 
