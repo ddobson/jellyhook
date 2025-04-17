@@ -3,9 +3,15 @@ import re
 import shlex
 
 from workers.config import WorkerConfig
-from workers.parsers.movies import MovieNameParser, StandardMovieParser, TrashMovieParser
+from workers.parsers.movies import (
+    FallbackMovieParser,
+    MovieNameParser,
+    StandardMovieParser,
+    TrashMovieParser,
+)
 
 MOVIE_PARSERS: dict[str, MovieNameParser] = {
+    "fallback": FallbackMovieParser,
     "standard": StandardMovieParser,
     "trash": TrashMovieParser,
 }
@@ -91,12 +97,14 @@ class Movie:
         worker_config = WorkerConfig()
         parser_type = worker_config.get_naming_scheme("movie")
 
-        try:
-            parser = MOVIE_PARSERS[parser_type]
-        except KeyError as err:
-            raise ValueError(f"Unknown parser type '{parser_type}'.") from err
-
+        parser = MOVIE_PARSERS[parser_type]
         movie_attrs = cls.parse_movie_filename(file.name, parser)
+
+        if not movie_attrs and parser_type != "fallback":
+            # Fallback to the default parser if no attributes were found
+            parser = MOVIE_PARSERS["fallback"]
+            movie_attrs = cls.parse_movie_filename(file.name, parser)
+
         return cls(file, **movie_attrs)
 
     @classmethod
@@ -111,28 +119,9 @@ class Movie:
             dict: The parsed attributes
         """
         result = parser.parse(filename)
-        if result is not None:
-            return result
 
-        # Fallback - extract minimal information
-        fallback = {}
-        # At minimum, we need a title and year
-        year_match = re.search(r"\b(19|20)\d{2}\b", filename)
-        if year_match:
-            fallback["year"] = year_match.group(0)
-            # Find how the year is wrapped (in parentheses, brackets, etc.)
-            year_pos = filename.find(fallback["year"])
-            # Check characters before the year for brackets/parentheses
-            if year_pos > 0 and filename[year_pos - 1] in "([":
-                name_parts = filename[: year_pos - 1].strip()
-            else:
-                name_parts = filename.split(fallback["year"], 1)[0].strip()
+        # If the specified parser didn't match, use the fallback parser
+        if result is None:
+            return FallbackMovieParser.parse(filename)
 
-            # Clean up the title - preserve underscores, replace dots with spaces
-            fallback["title"] = re.sub(r"(?<!_)\.(?!_)", " ", name_parts).strip()
-        else:
-            # No year found, use filename without extension as title
-            fallback["title"] = re.sub(r"\.\w+$", "", filename).replace(".", " ").strip()
-            fallback["year"] = ""
-
-        return fallback
+        return result

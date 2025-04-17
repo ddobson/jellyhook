@@ -100,7 +100,7 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
         """
         general_config = self.get_general_config()
         schemes = general_config.get("naming_schemes", {})
-        return schemes.get(item_type, "unknown")
+        return schemes.get(item_type, "fallback")
 
     def _set_worker_config(self, config: dict[str, Any]) -> None:
         """Set the worker configuration."""

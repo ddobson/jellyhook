@@ -1,8 +1,15 @@
-from typing import Literal, Type
+from typing import Literal
 
+from workers.parsers.movies.fallback import FallbackNamingScheme
 from workers.parsers.movies.standard import StandardNamingScheme
 from workers.parsers.movies.trash import TrashNamingScheme
 
-UnknownNamingScheme = Type[Literal["unknown"]]
+MovieNamingScheme = FallbackNamingScheme | TrashNamingScheme | StandardNamingScheme
 
-MovieNamingScheme = Type[TrashNamingScheme | StandardNamingScheme | UnknownNamingScheme]
+
+__all__ = [
+    "MovieNamingScheme",
+    "FallbackNamingScheme",
+    "TrashNamingScheme",
+    "StandardNamingScheme",
+]
