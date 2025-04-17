@@ -1,6 +1,76 @@
+import json
 from unittest import mock
 
 import pytest
+
+from workers.config.worker_config import WorkerConfig
+
+
+@pytest.fixture
+def mock_config_data():
+    """Create mock configuration data for testing."""
+    return {
+        "worker": {
+            "general": {"naming_schemes": {"movie": "trash"}},
+            "webhooks": {
+                "item_added": {
+                    "enabled": True,
+                    "queue": "jellyfin:item_added",
+                    "services": [
+                        {
+                            "name": "metadata_update",
+                            "enabled": True,
+                            "priority": 10,
+                            "config": {
+                                "paths": [
+                                    {
+                                        "path": "/data/media/stand-up",
+                                        "genres": {
+                                            "new_genres": ["Stand-Up"],
+                                            "replace_existing": True,
+                                        },
+                                    }
+                                ],
+                                "patterns": [],
+                            },
+                        },
+                        {
+                            "name": "dovi_conversion",
+                            "enabled": True,
+                            "priority": 20,
+                            "config": {"temp_dir": "/tmp/dovi_conversion"},
+                        },
+                        {
+                            "name": "disabled_service",
+                            "enabled": False,
+                            "priority": 30,
+                            "config": {},
+                        },
+                    ],
+                },
+                "disabled_webhook": {
+                    "enabled": False,
+                    "queue": "jellyfin:disabled",
+                    "services": [],
+                },
+            },
+        }
+    }
+
+
+@pytest.fixture
+def mock_config_file(tmp_path, mock_config_data):
+    """Create a temporary config file for testing."""
+    config_file = tmp_path / "config.json"
+    with open(config_file, "w") as f:
+        json.dump(mock_config_data, f)
+    return config_file
+
+
+@pytest.fixture
+def worker_config(mock_config_file):
+    """Create a WorkerConfig instance with mock data."""
+    return WorkerConfig.load(str(mock_config_file))
 
 
 @pytest.fixture

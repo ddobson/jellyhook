@@ -1,68 +1,10 @@
 import json
 from unittest import mock
 
-import pytest
 import yaml
 
 from workers.config.worker_config import WorkerConfig, load_config_file
 from workers.logger import logger
-
-
-@pytest.fixture
-def mock_config_data():
-    """Create mock configuration data for testing."""
-    return {
-        "worker": {
-            "webhooks": {
-                "item_added": {
-                    "enabled": True,
-                    "queue": "jellyfin:item_added",
-                    "services": [
-                        {
-                            "name": "metadata_update",
-                            "enabled": True,
-                            "priority": 10,
-                            "config": {
-                                "paths": [
-                                    {
-                                        "path": "/data/media/stand-up",
-                                        "genres": {
-                                            "new_genres": ["Stand-Up"],
-                                            "replace_existing": True,
-                                        },
-                                    }
-                                ],
-                                "patterns": [],
-                            },
-                        },
-                        {
-                            "name": "dovi_conversion",
-                            "enabled": True,
-                            "priority": 20,
-                            "config": {"temp_dir": "/tmp/dovi_conversion"},
-                        },
-                        {
-                            "name": "disabled_service",
-                            "enabled": False,
-                            "priority": 30,
-                            "config": {},
-                        },
-                    ],
-                },
-                "disabled_webhook": {
-                    "enabled": False,
-                    "queue": "jellyfin:disabled",
-                    "services": [],
-                },
-            }
-        }
-    }
-
-
-@pytest.fixture
-def worker_config(mock_config_data):
-    """Create a WorkerConfig instance with mock data."""
-    return WorkerConfig(mock_config_data["worker"])
 
 
 def test_get_enabled_webhooks(worker_config):
@@ -157,20 +99,19 @@ def test_load_worker_config(mock_load_config, mock_config_data):
 
 
 @mock.patch.dict("workers.utils.SingletonMeta._instances", {}, clear=True)
-def test_singleton_behavior():
+def test_singleton_behavior(mock_config_file, mock_config_data):
     """Test that WorkerConfig behaves as a singleton."""
     # Create a test instance
-    config1 = WorkerConfig({"webhooks": {"webhook1": {"enabled": True}}})
+    config1 = WorkerConfig.load(str(mock_config_file))
 
     # Create a second instance that should be the same object
-    config2 = WorkerConfig({"webhooks": {"webhook2": {"enabled": True}}})
+    config2 = WorkerConfig()
 
     # They should be the same instance
     assert config1 is config2
-
-    # The data should be from the first initialization (webhooks1 exists, webhook2 doesn't)
-    assert "webhook1" in config1.config.get("webhooks", {})
-    assert "webhook2" not in config2.config.get("webhooks", {})
+    assert config1.config == mock_config_data["worker"]
+    assert config2.config == mock_config_data["worker"]
+    assert config1.config is config2.config
 
 
 def test_load_config_file_nonexistent():

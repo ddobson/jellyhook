@@ -5,6 +5,7 @@ from typing import Any
 import yaml
 
 from workers import utils
+from workers.parsers import MovieNamingScheme
 
 
 class WorkerConfig(metaclass=utils.SingletonMeta):
@@ -13,9 +14,7 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
     This class is user-driven via a configuration file.
     """
 
-    def __init__(self, webhook_config: dict) -> None:
-        """Initialize the configuration manager."""
-        self.config: dict[str, Any] = webhook_config
+    config = {}
 
     def get_enabled_webhooks(self) -> dict:
         """Get a list of enabled webhooks.
@@ -82,12 +81,39 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
 
         return {}
 
+    def get_general_config(self) -> dict[str, Any]:
+        """Get the general configuration.
+
+        Returns:
+            The general configuration.
+        """
+        return self.config.get("general", {})
+
+    def get_naming_scheme(self, item_type: str) -> MovieNamingScheme:
+        """Get the naming configuration for the worker.
+
+        Args:
+            item_type (str): The type of item (e.g., "movie", "episode").
+
+        Returns:
+            The naming configuration.
+        """
+        general_config = self.get_general_config()
+        schemes = general_config.get("naming_schemes", {})
+        return schemes.get(item_type, "fallback")
+
+    def _set_worker_config(self, config: dict[str, Any]) -> None:
+        """Set the worker configuration."""
+        self.config = config
+
     @classmethod
     def load(cls, config_path: str) -> "WorkerConfig":
         """Load the configuration from the config file."""
+        worker = cls()
         jellyhook_config = load_config_file(config_path)
         worker_config = jellyhook_config.get("worker", {})
-        return cls(worker_config)
+        worker._set_worker_config(worker_config)
+        return worker
 
 
 def load_config_file(filename: str) -> dict:
