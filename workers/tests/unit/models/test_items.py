@@ -90,6 +90,30 @@ def test_movie_from_file(worker_config):
     assert movie.release_group == "GROUP"
 
 
+def test_movie_from_file_with_fallback():
+    """Test that Movie.from_file uses the fallback parser when the primary parser returns None."""
+    file_path = pathlib.Path("Some.Random.2022.File.mkv")
+
+    # First simulate a non-fallback parser_type configuration
+    with (
+        mock.patch(
+            "workers.config.worker_config.WorkerConfig.get_naming_scheme",
+            return_value="standard",
+        ),
+        mock.patch("workers.parsers.movies.StandardMovieParser.parse", return_value=None),
+        mock.patch(
+            "workers.parsers.movies.FallbackMovieParser.parse",
+            return_value={"title": "Some Random", "year": "2022"},
+        ) as mock_fallback_parser,
+    ):
+        movie = Movie.from_file(file_path)
+
+    # Verify the movie was created with the fallback parser values
+    mock_fallback_parser.assert_called_once_with(file_path.name)
+    assert movie.title == "Some Random"
+    assert movie.year == "2022"
+
+
 def test_parse_movie_filename_with_parser_result():
     """Test parsing different movie filenames."""
     filename = "Test Movie (2003).mkv"
