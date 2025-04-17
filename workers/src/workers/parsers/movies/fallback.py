@@ -1,5 +1,6 @@
 import re
-from typing import Literal, Type
+from typing import Literal
+
 from typing_extensions import override
 
 from workers.parsers.base import BaseParser

@@ -1,5 +1,3 @@
-from typing import Literal
-
 from workers.parsers.movies.fallback import FallbackNamingScheme
 from workers.parsers.movies.standard import StandardNamingScheme
 from workers.parsers.movies.trash import TrashNamingScheme

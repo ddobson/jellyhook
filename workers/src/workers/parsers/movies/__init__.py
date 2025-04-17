@@ -9,6 +9,6 @@ MovieNameParser = Type[FallbackMovieParser | StandardMovieParser | TrashMoviePar
 __all__ = [
     "MovieNameParser",
     "FallbackMovieParser",
-    "StandardMovieParser", 
+    "StandardMovieParser",
     "TrashMovieParser",
 ]

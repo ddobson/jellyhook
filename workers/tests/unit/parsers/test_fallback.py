@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import pytest
 
 from workers.models.items import Movie
@@ -69,11 +70,11 @@ def test_fallback_integration_with_movie():
     """Test that the fallback parser works correctly with the Movie class."""
     movie_file = Path("Some.Weird.Movie.2022.mkv")
     movie = Movie.from_file(movie_file)
-    
+
     assert movie.title == "Some Weird Movie"
     assert movie.year == "2022"
     assert movie.full_title == "Some Weird Movie (2022)"
-    
+
 
 def test_fallback_edge_cases():
     """Test edge cases for the fallback parser."""
@@ -81,17 +82,17 @@ def test_fallback_edge_cases():
     result = FallbackMovieParser.parse("Movie.2020.From.2019.mkv")
     assert result.get("title") == "Movie"
     assert result.get("year") == "2020"
-    
+
     # Year at start of filename
     result = FallbackMovieParser.parse("2018.Movie.Title.mkv")
     assert result.get("title") == ""
     assert result.get("year") == "2018"
-    
+
     # Special characters in filename
     result = FallbackMovieParser.parse("Special-@#$-Characters.2023.mkv")
     assert result.get("title") == "Special-@#$-Characters"
     assert result.get("year") == "2023"
-    
+
     # Empty filename
     result = FallbackMovieParser.parse("")
     assert result.get("title") == ""
