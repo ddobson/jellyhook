@@ -69,8 +69,9 @@ build_api:
 	@echo "Building API image jellyhook-api:$(TAG)..."
 	docker buildx build \
 		--no-cache \
-		--platform linux/amd64 \
+		--platform linux/amd64,linux/arm64 \
 		--tag jellyhook-api:$(TAG) \
+		--provenance false \
 		--load \
 		--file $(DOCKERFILE) ./api
 
@@ -80,8 +81,9 @@ build_worker:
 	@echo "Building Worker image jellyhook-worker:$(TAG)..."
 	docker buildx build \
 		--no-cache \
-		--platform linux/amd64 \
+		--platform linux/amd64,linux/arm64 \
 		--tag jellyhook-worker:$(TAG) \
+		--provenance false \
 		--load \
 		--file $(DOCKERFILE) ./workers
 
