@@ -68,6 +68,17 @@
             }
           },
           {
+            "name": "media_track_clean",
+            "enabled": true,
+            "priority": 15,
+            "config": {
+              "keep_original": true,
+              "keep_default": true,
+              "keep_audio_langs": ["eng"],
+              "keep_sub_langs": ["eng", "spa"]
+            }
+          },
+          {
             "name": "dovi_conversion",
             "enabled": true,
             "priority": 20,

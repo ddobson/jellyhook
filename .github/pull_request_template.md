@@ -10,4 +10,4 @@ N/A
 
 ## Checklist
 
-- [] Relevant documentation updates have been made
+- [ ] Relevant documentation updates have been made

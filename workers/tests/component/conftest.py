@@ -6,7 +6,7 @@ import pytest
 
 from workers import utils
 from workers.movie import Movie
-from workers.services import DoviConversionService
+from workers.services import DoviConversionService, MediaTrackCleanService
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def temp_dir(tmp_path):
 @pytest.fixture
 def asset_copies(temp_dir):
     # Get the path to the assets directory
-    assets_dir = pathlib.Path(__file__).parent / "assets"
+    assets_dir = pathlib.Path(__file__).parent.parent / "assets"
 
     # Create a copy directory for test assets
     test_assets_dir = temp_dir / "assets"
@@ -39,7 +39,15 @@ def asset_copies(temp_dir):
     p8_dest = test_assets_dir / p8_source.name
     shutil.copy2(p8_source, p8_dest)
 
-    return {"p7": p7_dest, "p8": p8_dest}
+    # Copy the multi-track test file
+    multitrack_source = (
+        assets_dir
+        / "Multi-Track Test File (2025) [tmdbid45678] - [Bluray-2160p][AAC][x264]-TESTFILE.mkv"
+    )
+    multitrack_dest = test_assets_dir / multitrack_source.name
+    shutil.copy2(multitrack_source, multitrack_dest)
+
+    return {"p7": p7_dest, "p8": p8_dest, "multitrack": multitrack_dest}
 
 
 @pytest.fixture
@@ -53,6 +61,11 @@ def p8_movie(asset_copies):
 
 
 @pytest.fixture
+def multitrack_movie(asset_copies):
+    return Movie.from_file(asset_copies["multitrack"])
+
+
+@pytest.fixture
 def p7_service(p7_movie, temp_dir):
     return DoviConversionService(p7_movie, temp_dir)
 
@@ -60,6 +73,30 @@ def p7_service(p7_movie, temp_dir):
 @pytest.fixture
 def p8_service(p8_movie, temp_dir):
     return DoviConversionService(p8_movie, temp_dir)
+
+
+@pytest.fixture
+def multitrack_service_all_eng(multitrack_movie):
+    """MediaTrackCleanService configured to keep only English tracks."""
+    return MediaTrackCleanService(
+        multitrack_movie,
+        keep_original=True,
+        keep_default=True,
+        keep_audio_langs=["eng"],
+        keep_sub_langs=["eng"],
+    )
+
+
+@pytest.fixture
+def multitrack_service_multi_langs(multitrack_movie):
+    """MediaTrackCleanService configured to keep English, Spanish and German."""
+    return MediaTrackCleanService(
+        multitrack_movie,
+        keep_original=False,
+        keep_default=False,
+        keep_audio_langs=["eng", "spa", "deu"],
+        keep_sub_langs=["eng", "deu"],
+    )
 
 
 @pytest.fixture
@@ -157,3 +194,26 @@ def run_command_mock():
         "workers.services.dovi_conversion.utils.run_command", new=MagicMock(wraps=utils.run_command)
     ) as mock_fn:
         yield mock_fn
+
+
+@pytest.fixture
+def track_clean_command_mock():
+    """Mock for run_command that wraps the real function for MediaTrackCleanService."""
+    with patch(
+        "workers.services.media_track_clean.run_command", new=MagicMock(wraps=utils.run_command)
+    ) as mock_fn:
+        yield mock_fn
+
+
+@pytest.fixture
+def mock_os_operations(monkeypatch):
+    """Mock OS operations for file management."""
+    mock_rename = MagicMock()
+    mock_unlink = MagicMock()
+    mock_exists = MagicMock(return_value=True)
+
+    monkeypatch.setattr("os.rename", mock_rename)
+    monkeypatch.setattr("os.unlink", mock_unlink)
+    monkeypatch.setattr("os.path.exists", mock_exists)
+
+    return {"rename": mock_rename, "unlink": mock_unlink, "exists": mock_exists}

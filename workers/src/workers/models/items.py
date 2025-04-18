@@ -17,6 +17,108 @@ MOVIE_PARSERS: dict[str, MovieNameParser] = {
 }
 
 
+class MediaStream:
+    """Represents a media stream with metadata from ffprobe."""
+
+    def __init__(
+        self,
+        index: int,
+        codec_type: str,
+        language: str | None = None,
+        is_default: bool = False,
+        is_original: bool = False,
+    ) -> None:
+        """Initialize a MediaStream.
+
+        Args:
+            index: The index of the stream.
+            codec_type: The type of the stream (audio, subtitle, etc.).
+            language: The language of the stream.
+            is_default: Whether this stream is marked as default.
+            is_original: Whether this stream is marked as original.
+        """
+        self.index = index
+        self.codec_type = codec_type
+        self.language = language or "und"  # Default to undefined if not specified
+        self.is_default = is_default
+        self.is_original = is_original
+
+    @classmethod
+    def from_ffprobe(cls, stream_data: dict) -> "MediaStream":
+        """Create a MediaStream from ffprobe stream data.
+
+        Args:
+            stream_data: The stream data from ffprobe.
+
+        Returns:
+            A MediaStream instance.
+        """
+        # Extract basic info
+        index = stream_data["index"]
+        codec_type = stream_data["codec_type"]
+
+        # Extract language from tags if available
+        language = None
+        if "tags" in stream_data and "language" in stream_data["tags"]:
+            language = stream_data["tags"]["language"]
+
+        # Extract disposition flags
+        is_default = False
+        is_original = False
+        if "disposition" in stream_data:
+            is_default = bool(stream_data["disposition"].get("default", 0))
+            is_original = bool(stream_data["disposition"].get("original", 0))
+
+        return cls(
+            index=index,
+            codec_type=codec_type,
+            language=language,
+            is_default=is_default,
+            is_original=is_original,
+        )
+
+
+class MediaTrackCleanConfig:
+    """Configuration for the media track cleaning service."""
+
+    def __init__(
+        self,
+        keep_original: bool = True,
+        keep_default: bool = True,
+        keep_audio_langs: list[str] = None,
+        keep_sub_langs: list[str] = None,
+    ) -> None:
+        """Initialize the configuration.
+
+        Args:
+            keep_original: Whether to keep original tracks.
+            keep_default: Whether to keep default tracks.
+            keep_audio_langs: Languages to keep for audio tracks.
+            keep_sub_langs: Languages to keep for subtitle tracks.
+        """
+        self.keep_original = keep_original
+        self.keep_default = keep_default
+        self.keep_audio_langs = keep_audio_langs or []
+        self.keep_sub_langs = keep_sub_langs or []
+
+    @classmethod
+    def from_dict(cls, config: dict) -> "MediaTrackCleanConfig":
+        """Create a configuration from a dictionary.
+
+        Args:
+            config: The configuration dictionary.
+
+        Returns:
+            A MediaTrackCleanConfig instance.
+        """
+        return cls(
+            keep_original=config.get("keep_original", True),
+            keep_default=config.get("keep_default", True),
+            keep_audio_langs=config.get("keep_audio_langs", []),
+            keep_sub_langs=config.get("keep_sub_langs", []),
+        )
+
+
 class Movie:
     """A class to represent a movie."""
 

@@ -133,4 +133,4 @@ CLAUDE*.md
 docs/feature_plans
 dovi_convert.sh
 docker-compose.override.yaml
-workers/tests/component/assets/*.mkv
+workers/tests/assets
