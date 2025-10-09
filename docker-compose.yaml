@@ -44,11 +44,11 @@ services:
       - "5678:5678"
     volumes:
       - type: bind
+        source: ./workers/jellyhook.local.json
+        target: /config/jellyhook.json
+      - type: bind
         source: ./workers
         target: /app
-      - type: bind
-        source: /Volumes/appdata/jellyhook
-        target: /config
       - type: bind
         source: /Volumes/data
         target: /data
@@ -59,13 +59,15 @@ services:
       - jellyhook
     depends_on:
       - rabbitmq
+    env_file:
+      - ./workers/.env
     environment:
       DEBUG: "1"
       MOVIE_PATH: "/data/media/movies"
       STANDUP_PATH: "/data/media/stand-up"
       RABBITMQ_HOST: rabbitmq
       WORKER_ENV: development
-      PYDEVD_DISABLE_FILE_VALIDATION: "0"
+      PYDEVD_DISABLE_FILE_VALIDATION: "1"
       JELLYFIN_API_KEY: "" # Add your Jellyfin API key here
       JELLYFIN_PORT: "8096"  # Default Jellyfin port
       JELLYFIN_HOST: "http://homelab.local"

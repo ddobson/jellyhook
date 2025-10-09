@@ -43,7 +43,7 @@
     "python.terminal.activateEnvironment": true,
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
-    "ruff.configuration": "../.ruff.toml",
+    "ruff.configuration": "ruff.toml",
     "[python]": {
       "editor.rulers": [100]
     },

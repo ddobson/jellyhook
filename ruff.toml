@@ -62,7 +62,7 @@ lint.ignore = [
 [lint.isort]
 combine-as-imports = true
 force-wrap-aliases = true
-known-first-party = ["jellyhook_api"]
+known-first-party = ["jellyhook_api", "workers"]
 
 # Format configuration
 [format]

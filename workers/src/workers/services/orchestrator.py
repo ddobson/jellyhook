@@ -2,6 +2,23 @@
 
 This module provides a class for orchestrating the execution of services
 based on configuration for a specific webhook.
+
+Service registration quick reference:
+1. Implement a `ServiceBase` subclass with both `exec()` and `from_message()`
+   factory methods so the orchestrator can build and run it.
+    - Use `ServiceBase.file_from_message()` helpers and follow the patterns in
+      `metadata_update.py` or `dovi_conversion.py` as guides.
+2. Register the service name in the maps below:
+    - `SERVICE_MODULES` maps the new service's config name to its module path.
+    - `SERVICE_CLASSES` maps the same name to the concrete class identifier in that module.
+    - The name must match the `service["name"]` value supplied in configuration.
+3. Add the service to the worker configuration YAML/JSON file.
+    - JSON / YAML schema target (`worker.webhooks[<id>].services`):
+    - Include `enabled`, optional `priority` (lower values run first), and a `config` block.
+    - At runtime `WorkerConfig.get_enabled_services()` filters the list and passes the
+      `config` dict into `from_message()` so the service can read its options.
+4. (Optional) Expose the class from `workers.services.__init__` if other modules import it
+   directly; the orchestrator only depends on the registry above.
 """
 
 import importlib
@@ -19,12 +36,14 @@ SERVICE_MODULES = {
     "metadata_update": "workers.services.metadata_update",
     "dovi_conversion": "workers.services.dovi_conversion",
     "media_track_clean": "workers.services.media_track_clean",
+    "playlist_assignment": "workers.services.playlist_assignment",
 }
 
 SERVICE_CLASSES = {
     "metadata_update": "MetadataUpdateService",
     "dovi_conversion": "DoviConversionService",
     "media_track_clean": "MediaTrackCleanService",
+    "playlist_assignment": "PlaylistAssignmentService",
 }
 
 

@@ -38,3 +38,14 @@ worker:
           priority: 20
           config:
             temp_dir: /tmp/dovi_conversion
+        - name: playlist_assignment
+          enabled: true
+          priority: 30
+          config:
+            rules:
+              - playlist_id: 55091bf03be4e68c28a045cf97c7d067
+                playlist_name: Under 2 Hours
+                conditions:
+                  item_types:
+                    - Movie
+                  max_runtime_minutes: 120

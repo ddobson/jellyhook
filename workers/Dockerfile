@@ -38,4 +38,4 @@ RUN if [ "$ENV" = "development" ]; then \
     rm requirements.txt
 
 # Run the application
-CMD [ "uv", "run", "-m", "workers.main" ]
+CMD [ "python3", "-m", "workers.main" ]

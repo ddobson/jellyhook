@@ -170,6 +170,18 @@ worker:
           priority: 20
           config:
             # Configuration options for Dolby Vision conversion
+
+        - name: playlist_assignment
+          enabled: true
+          priority: 30
+          config:
+            rules:
+              - playlist_id: 1234567890abcdef1234567890abcdef
+                playlist_name: Under 2 Hours
+                conditions:
+                  item_types:
+                    - Movie
+                  max_runtime_minutes: 120
 ```
 
 Place this file at `~/.config/jellyhook/jellyhook.yaml` or specify a custom path with the `JELLYHOOK_CONFIG_PATH` environment variable.
