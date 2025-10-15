@@ -133,4 +133,6 @@ CLAUDE*.md
 docs/feature_plans
 dovi_convert.sh
 docker-compose.override.yaml
+workers/jellyhook.local.json
+workers/jellyhook.local.yaml
 workers/tests/assets
