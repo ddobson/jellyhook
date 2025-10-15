@@ -1,5 +1,7 @@
 name: Code Quality
 
+# Validate API and worker projects with linting, unit tests, and coverage reporting.
+
 on:
   push:
     branches: ["main"]
