@@ -1,5 +1,7 @@
 name: Docker Build and Publish
 
+# Build and publish API and worker Docker images to GitHub Container Registry on releases.
+
 on:
   push:
     branches: [main]
@@ -17,7 +19,7 @@ jobs:
     name: Setup Build Environment
     runs-on: ubuntu-latest
     outputs:
-      release_tag: ${{ steps.set_tag.outputs.tag }}
+      release_tag: ${{ steps.set_tag_dispatch.outputs.tag || steps.set_tag_release.outputs.tag || steps.set_tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       
