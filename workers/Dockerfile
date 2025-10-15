@@ -34,7 +34,7 @@ RUN if [ "$ENV" = "development" ]; then \
     else \
         uv export --no-hashes --no-dev > requirements.txt; \
     fi && \
-    pip3 install -r requirements.txt && \
+    pip3 install --no-cache-dir -r requirements.txt && \
     rm requirements.txt
 
 # Run the application
