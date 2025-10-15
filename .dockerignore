@@ -15,8 +15,8 @@
 **/*.so
 .Python
 **/env/
-**/venv/
-**/.venv/
+**/venv
+**/.venv
 **/ENV/
 **/.pytest_cache/
 **/.coverage

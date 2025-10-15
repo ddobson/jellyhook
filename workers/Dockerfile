@@ -30,11 +30,11 @@ COPY src ./src/
 
 # Install python dependencies
 RUN if [ "$ENV" = "development" ]; then \
-        uv export > requirements.txt; \
+        uv export --no-hashes > requirements.txt; \
     else \
-        uv export --no-dev > requirements.txt; \
+        uv export --no-hashes --no-dev > requirements.txt; \
     fi && \
-    uv pip install --system --no-cache-dir -r requirements.txt && \
+    pip3 install --no-cache-dir -r requirements.txt && \
     rm requirements.txt
 
 # Run the application
