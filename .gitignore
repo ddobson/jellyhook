@@ -127,6 +127,7 @@ cython_debug/
 
 # Misseclaneous
 CLAUDE*.md
+WARP.md
 *.DS_Store
 
 # Propject-specific files
