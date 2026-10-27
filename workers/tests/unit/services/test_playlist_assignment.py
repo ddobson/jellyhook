@@ -1,7 +1,7 @@
 """Tests for the playlist assignment service module."""
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
@@ -71,7 +71,8 @@ def _build_service(
 def test_from_message_populates_service_fields() -> None:
     message = {"ItemId": "abc123"}
     rules = [{"playlist_id": "playlist"}]
-    service = PlaylistAssignmentService.from_message(message, {"rules": rules})
+    with patch("workers.services.playlist_assignment.get_client"):
+        service = PlaylistAssignmentService.from_message(message, {"rules": rules})
 
     assert service.item_id == "abc123"
     assert service.rules == rules

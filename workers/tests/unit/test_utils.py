@@ -1,5 +1,6 @@
 import pathlib
 import subprocess
+import time
 from unittest import mock
 
 import pytest
@@ -39,95 +40,104 @@ def test_timer_decorator_with_args(mock_time):
     mock_logger.assert_called_once_with("test_func took 7.0 seconds")
 
 
-def test_run_command_success(tmp_path):
-    # Create a test script that succeeds
-    script_path = tmp_path / "test_script.sh"
-    script_path.write_text("#!/bin/bash\necho 'Success!'\nexit 0\n")
-    script_path.chmod(0o755)
+def _script(tmp_path, body: str) -> pathlib.Path:
+    """Write an executable shell script and return its path."""
+    script = tmp_path / "script.sh"
+    script.write_text(f"#!/bin/bash\n{body}\n")
+    script.chmod(0o755)
+    return script
 
-    result = utils.run_command(f"{script_path}")
+
+def test_run_command_success(tmp_path):
+    result = utils.run_command([_script(tmp_path, "echo 'Success!'")])
 
     assert result.returncode == 0
-    assert "Success!" in result.stdout
+    assert result.stdout == "Success!"
     assert result.stderr == ""
 
 
 def test_run_command_failure(tmp_path):
-    # Create a test script that fails
-    script_path = tmp_path / "test_fail.sh"
-    script_path.write_text("#!/bin/bash\necho 'Error message' >&2\nexit 1\n")
-    script_path.chmod(0o755)
+    script = _script(tmp_path, "echo 'Error message' >&2\nexit 1")
 
     with pytest.raises(subprocess.CalledProcessError) as excinfo:
-        utils.run_command(f"{script_path}")
+        utils.run_command([script])
 
     assert excinfo.value.returncode == 1
     assert "Error message" in excinfo.value.stderr
 
 
+def test_run_command_accepts_extra_ok_exit_codes(tmp_path):
+    """mkvmerge-style: exit 1 means "finished with warnings"."""
+    script = _script(tmp_path, "exit 1")
+
+    result = utils.run_command([script], ok_returncodes=(0, 1))
+
+    assert result.returncode == 1
+
+
 def test_run_command_logs_output_when_requested(tmp_path):
-    # Create a test script with output
-    script_path = tmp_path / "test_log.sh"
-    script_path.write_text("#!/bin/bash\necho 'Standard output'\necho 'Error output' >&2\nexit 0\n")
-    script_path.chmod(0o755)
+    script = _script(tmp_path, "echo 'Standard output'\necho 'Error output' >&2")
 
     with (
         mock.patch.object(logger, "info") as mock_info,
         mock.patch.object(logger, "error") as mock_error,
     ):
-        utils.run_command(f"{script_path}", log_output=True, log_err=True)
+        utils.run_command([script], log_output=True, log_err=True)
 
     mock_info.assert_called_with("Standard output")
     mock_error.assert_called_with("Error output")
 
 
-def test_clean_dir_empty(tmp_path):
-    """Test clean_dir on an empty directory."""
-    # Create a directory structure
-    empty_dir = tmp_path / "empty"
-    empty_dir.mkdir()
-
-    utils.clean_dir(empty_dir)
-
-    # Directory should be removed
-    assert not empty_dir.exists()
+def test_run_command_rejects_shell_strings():
+    """A string would mean a shell; callers must pass an argument list."""
+    with pytest.raises(TypeError):
+        utils.run_command("echo hi")
 
 
-def test_clean_dir_with_files(tmp_path):
-    """Test clean_dir on a directory with files."""
-    # Create a directory with files
-    test_dir = tmp_path / "test_dir"
-    test_dir.mkdir()
-    (test_dir / "file1.txt").write_text("content1")
-    (test_dir / "file2.txt").write_text("content2")
+def test_run_command_does_not_interpret_shell_syntax(tmp_path):
+    """Metacharacters in an argument are just text, not commands."""
+    marker = tmp_path / "pwned"
 
-    utils.clean_dir(test_dir)
+    result = utils.run_command(["echo", f"$(touch {marker}); `touch {marker}`"])
 
-    # Directory should be removed
-    assert not test_dir.exists()
+    assert not marker.exists()
+    assert "$(touch" in result.stdout
 
 
-def test_clean_dir_with_subdirs(tmp_path):
-    """Test clean_dir on a directory with subdirectories."""
-    # Create a nested directory structure
-    test_dir = tmp_path / "test_dir"
-    test_dir.mkdir()
-    subdir1 = test_dir / "subdir1"
-    subdir1.mkdir()
-    (subdir1 / "file1.txt").write_text("content1")
-    subdir2 = test_dir / "subdir2"
-    subdir2.mkdir()
-    (subdir2 / "file2.txt").write_text("content2")
+def test_run_command_does_not_deadlock_on_large_stderr(tmp_path):
+    """ffmpeg-style progress spam on stderr used to fill the pipe and hang the job forever."""
+    script = _script(
+        tmp_path,
+        "head -c 2000000 /dev/zero | tr '\\0' 'e' | fold -w 100 >&2\necho done",
+    )
 
-    utils.clean_dir(test_dir)
+    result = utils.run_command([script], timeout=30)
 
-    # Directory should be removed
-    assert not test_dir.exists()
-    assert not subdir1.exists()
-    assert not subdir2.exists()
+    assert result.stdout == "done"
+    assert len(result.stderr) > 1_000_000
 
 
-def test_clean_dir_nonexistent():
-    """Test clean_dir on a nonexistent directory."""
-    with pytest.raises(FileNotFoundError):
-        utils.clean_dir(pathlib.Path("/nonexistent/directory"))
+def test_run_command_kills_a_hung_process(tmp_path):
+    script = _script(tmp_path, "sleep 30")
+
+    started = time.monotonic()
+    with pytest.raises(subprocess.TimeoutExpired):
+        utils.run_command([script], timeout=0.3)
+
+    assert time.monotonic() - started < 10  # killed, not waited out
+
+
+def test_run_command_passes_popen_options_through(tmp_path):
+    result = utils.run_command(["pwd"], cwd=tmp_path)
+
+    assert pathlib.Path(result.stdout).resolve() == tmp_path.resolve()
+
+
+def test_kill_process_group_falls_back_to_killing_the_process():
+    """If the group is already gone (or off limits), kill the direct child instead."""
+    process = mock.MagicMock(pid=999_999_999)
+
+    with mock.patch.object(utils.os, "killpg", side_effect=ProcessLookupError):
+        utils._kill_process_group(process)
+
+    process.kill.assert_called_once()

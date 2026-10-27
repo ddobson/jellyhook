@@ -3,7 +3,7 @@ import json
 import pathlib
 from typing import Any
 
-from workers import utils
+from workers import fileops, utils
 from workers.config import TEMP_DIR
 from workers.errors import WebhookWorkerError
 from workers.logger import logger
@@ -33,6 +33,11 @@ class DoviConversionService(ServiceBase):
         """
         self.movie = movie
         self.tmp_dir = tmp_dir
+
+    @property
+    def locked_path(self) -> pathlib.Path:
+        """The movie file this service rewrites."""
+        return pathlib.Path(self.movie.full_path)
 
     def exec(self) -> None:
         """Execute the Dolby Vision conversion process.
@@ -82,14 +87,17 @@ class DoviConversionService(ServiceBase):
             int: The Dolby Vision profile version.
 
         """
-        cmd = (
-            "ffprobe "
-            "-v quiet "
-            "-print_format json "
-            "-show_streams "
-            "-select_streams v:0 "
-            f"{self.movie.escaped_path}"
-        )
+        cmd = [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-select_streams",
+            "v:0",
+            self.movie.full_path,
+        ]
         completed = utils.run_command(cmd)
         media_info = json.loads(completed.stdout)
 
@@ -108,7 +116,7 @@ class DoviConversionService(ServiceBase):
         """
         video_path = f"{self.tmp_dir}/video.hevc"
         # TODO: Change this command to use ffmpeg instead of mkvextract for improved performance
-        cmd = f'mkvextract "{self.movie.full_path}" tracks "0:{video_path}"'
+        cmd = ["mkvextract", self.movie.full_path, "tracks", f"0:{video_path}"]
         utils.run_command(cmd, log_output=True, log_err=True)
 
         return video_path
@@ -124,7 +132,7 @@ class DoviConversionService(ServiceBase):
 
         """
         el_video_path = f"{self.tmp_dir}/EL.hevc"
-        cmd = f'dovi_tool demux "{video_path}" --el-only -e  "{el_video_path}"'
+        cmd = ["dovi_tool", "demux", video_path, "--el-only", "-e", el_video_path]
         utils.run_command(cmd, log_output=True, log_err=True)
 
         return el_video_path
@@ -141,7 +149,7 @@ class DoviConversionService(ServiceBase):
 
         """
         layer = f"{self.tmp_dir}/{output_layer}"
-        cmd = f'dovi_tool -m 0 extract-rpu "{hevc_path}" -o "{layer}"'
+        cmd = ["dovi_tool", "-m", "0", "extract-rpu", hevc_path, "-o", layer]
         utils.run_command(cmd)
 
         return layer
@@ -175,7 +183,7 @@ class DoviConversionService(ServiceBase):
         logger.info("Converting Dolby Vision to Profile 8.1...")
 
         p8_video_path = f"{self.tmp_dir}/P8.hevc"
-        cmd = f'dovi_tool -m 2 convert --discard "{video_path}" -o "{p8_video_path}"'
+        cmd = ["dovi_tool", "-m", "2", "convert", "--discard", video_path, "-o", p8_video_path]
         utils.run_command(cmd, log_output=True, log_err=True)
 
         return p8_video_path
@@ -192,12 +200,16 @@ class DoviConversionService(ServiceBase):
 
         """
         output_path = f"{self.tmp_dir}/final_output.mkv"
-        cmd = f'mkvmerge --output "{output_path}" "{p8_video_path}" --no-video "{original_mkv}"'
-        utils.run_command(cmd)
+        cmd = ["mkvmerge", "--output", output_path, p8_video_path, "--no-video", original_mkv]
+        # mkvmerge exits 1 for "finished, with warnings", which still produced a good file
+        utils.run_command(cmd, ok_returncodes=(0, 1))
         return pathlib.Path(output_path)
 
     def move_to_target(self, output_file: pathlib.Path, target: str) -> None:
-        """Move the final output file to the target destination.
+        """Swap the final output file in for the target, atomically.
+
+        The original is never deleted first: `fileops.replace_file` puts the new file next to it
+        and renames over it, so a failure at any point leaves the original in place.
 
         Args:
             output_file (pathlib.Path): The path to the final output file.
@@ -207,8 +219,7 @@ class DoviConversionService(ServiceBase):
             None
 
         """
-        self.movie.delete()
-        output_file.rename(target)
+        fileops.replace_file(output_file, pathlib.Path(target))
 
     @classmethod
     def from_message(cls, message: dict, service_config: dict[str, Any]) -> "DoviConversionService":
@@ -227,8 +238,8 @@ class DoviConversionService(ServiceBase):
         movie_file = cls.file_from_message(message)
         movie = Movie.from_file(movie_file)
 
-        # Create the movie-specific temp directory
-        tmp_dir = pathlib.Path(f"{temp_directory}/{movie.folder_title}")
-        tmp_dir.mkdir(exist_ok=True, parents=True)
+        # A directory of its own for this run: keying it on the title let a redelivered message
+        # (or two queues) reuse each other's half-finished files.
+        tmp_dir = fileops.make_job_dir(temp_directory, movie.folder_title)
         logger.info(f"Using temporary directory: {tmp_dir}")
         return cls(movie, tmp_dir)

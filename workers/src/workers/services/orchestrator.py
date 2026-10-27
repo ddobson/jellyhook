@@ -26,9 +26,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from workers import utils
+from workers import fileops
 from workers.config import WorkerConfig
 from workers.errors import ServiceConfigurationError, is_transient
+from workers.fileops import media_file_lock
 from workers.logger import logger
 from workers.results import ProcessingResult
 from workers.services.service_base import ServiceBase
@@ -157,12 +158,12 @@ class ServiceOrchestrator:
                     )
                     continue
 
-                # Execute the service
-                service.exec()
-
-                # Track temporary directory for cleanup if available
+                # Track the scratch directory before running, so it is cleaned up even if
+                # exec() fails part-way (that is exactly when files get left behind)
                 if hasattr(service, "tmp_dir"):
                     self.temp_dirs.add(service.tmp_dir)
+
+                self._run_service(service)
 
             except Exception as e:
                 logger.error(f"Service {service_name} failed: {e}")
@@ -174,6 +175,16 @@ class ServiceOrchestrator:
                     failures.append((str(service_name), e))
 
         return self._summarize_failures(failures)
+
+    @staticmethod
+    def _run_service(service: ServiceBase) -> None:
+        """Run a service, holding the lock for the file it modifies (if any)."""
+        locked_path = service.locked_path
+        if locked_path is None:
+            service.exec()
+            return
+        with media_file_lock(locked_path):
+            service.exec()
 
     @staticmethod
     def _summarize_failures(failures: list[tuple[str, Exception]]) -> ProcessingResult:
@@ -191,13 +202,11 @@ class ServiceOrchestrator:
         return ProcessingResult.failed(reason)
 
     def cleanup(self) -> None:
-        """Clean up temporary directories created by services."""
+        """Remove the scratch directories created by services. Never raises."""
         for tmp_dir in self.temp_dirs:
-            try:
-                logger.info(f"Cleaning temporary files for '{tmp_dir}'...")
-                utils.clean_dir(tmp_dir)
-            except (FileNotFoundError, PermissionError) as e:
-                logger.error(f"Failed to clean temporary directory {tmp_dir}: {e}")
+            logger.info(f"Cleaning temporary files for '{tmp_dir}'...")
+            fileops.remove_dir(tmp_dir)
+        self.temp_dirs.clear()
 
 
 def process_webhook_message(webhook_id: str, message_body: bytes) -> ProcessingResult:
@@ -223,20 +232,16 @@ def process_webhook_message(webhook_id: str, message_body: bytes) -> ProcessingR
         logger.error(f"Message for webhook {webhook_id} is not a JSON object")
         return ProcessingResult.failed(f"Expected a JSON object, got {type(message).__name__}")
 
+    orchestrator: ServiceOrchestrator | None = None
     try:
-        # Create the orchestrator
         orchestrator = ServiceOrchestrator(webhook_id)
-
-        # Process the webhook
-        result = orchestrator.process_webhook(message)
-
-        # Clean up
-        orchestrator.cleanup()
-
-        return result
+        return orchestrator.process_webhook(message)
     except Exception as e:
         logger.error(f"Failed to process webhook {webhook_id}: {e}")
         reason = f"{type(e).__name__}: {e}"
         return (
             ProcessingResult.retry(reason) if is_transient(e) else ProcessingResult.failed(reason)
         )
+    finally:
+        if orchestrator is not None:
+            orchestrator.cleanup()

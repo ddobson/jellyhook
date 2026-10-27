@@ -1,10 +1,18 @@
-import pathlib
+import os
+import signal
 import subprocess
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Sequence
 from threading import Lock
+from typing import IO, Any
 
 from workers.logger import logger
+
+# Longest any one external program may run. Remuxing a large 4K file is slow but not this slow;
+# past it the program is almost certainly hung, and a stuck job would otherwise hold its queue
+# slot (and eventually the broker's consumer_timeout) forever.
+DEFAULT_COMMAND_TIMEOUT_SECONDS = 6 * 60 * 60
 
 
 class SingletonMeta(type):
@@ -42,91 +50,112 @@ def timer(func: Callable) -> Callable:
     return wrapper
 
 
+def _drain_stream(
+    stream: IO[str],
+    sink: list[str],
+    log: Callable[[str], None] | None,
+) -> None:
+    """Read a pipe to EOF, keeping every line and optionally logging it as it arrives.
+
+    Args:
+        stream (IO[str]): The pipe to read.
+        sink (list[str]): Where the (right-stripped) lines are collected.
+        log (Callable[[str], None] | None): Called with each line, or None to stay quiet.
+    """
+    for line in stream:
+        stripped = line.rstrip()
+        sink.append(stripped)
+        if log is not None:
+            log(stripped)
+
+
+def _kill_process_group(process: subprocess.Popen[str]) -> None:
+    """SIGKILL a process and everything it started (it leads its own process group)."""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        process.kill()
+
+
 def run_command(
-    cmd: str,
+    cmd: Sequence[str | os.PathLike[str]],
     log_output: bool = False,
     log_err: bool = False,
-    **kwargs: dict,
-) -> subprocess.CompletedProcess:
-    """Execute a subprocess commands.
+    timeout: float | None = DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    ok_returncodes: Collection[int] = (0,),
+    **kwargs: Any,
+) -> subprocess.CompletedProcess[str]:
+    """Run an external program and capture its output.
 
-    This function runs a command in a subprocess and captures its output.
-    It will sanitize command line arguments to prevent shell injection attacks.
-    It can log the output and error streams to a logger if specified.
+    The command is an argument list and never goes through a shell, so file names with spaces,
+    quotes or `$(...)` in them are just file names. stdout and stderr are drained on separate
+    threads: ffmpeg writes a steady stream of progress to stderr, and reading one pipe to EOF
+    before the other deadlocks as soon as the unread pipe's buffer (about 64 KB) fills up.
+    See https://docs.python.org/3/library/subprocess.html#subprocess.Popen.communicate
 
     Args:
-        cmd (str): The command to execute.
-        log_output (bool, optional): Stream stdout to logger. Defaults to False.
-        log_err (bool, optional): Stream stderr to logger. Defaults to False.
-        **kwargs: All additonal kwargs are passed to subproccess.Popen()
+        cmd (Sequence[str | os.PathLike[str]]): The program and its arguments.
+        log_output (bool): Log stdout lines at INFO as they arrive.
+        log_err (bool): Log stderr lines at ERROR as they arrive.
+        timeout (float | None): Seconds before the process is killed. None waits forever.
+        ok_returncodes (Collection[int]): Exit codes that count as success. mkvmerge, for
+            one, exits 1 for "finished with warnings".
+        **kwargs: Passed to `subprocess.Popen` (for example `cwd`). `shell` is not accepted.
 
     Raises:
-        subprocess.CalledProcessError: A exception with subprocess error information
+        TypeError: If `cmd` is a string. Pass a list so no shell is involved.
+        subprocess.TimeoutExpired: If the process outlived `timeout`. It has been killed.
+        subprocess.CalledProcessError: If the exit code is not in `ok_returncodes`.
 
     Returns:
-        subprocess.CompletedProcess: An object representing the completed process
-
+        subprocess.CompletedProcess[str]: The finished process with its output.
     """
-    opts = {
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
-        "text": True,
-        "shell": True,
-        "bufsize": 1,
-        "universal_newlines": True,
-    }
-    opts.update(kwargs)
+    if isinstance(cmd, str | bytes):
+        raise TypeError("run_command takes an argument list, not a shell string")
+    args = [os.fspath(part) for part in cmd]
 
-    process = subprocess.Popen(cmd, **opts)  # Remove shlex.split, pass cmd directly
+    # Own process group, so a timeout can kill the program's children too. Killing only the
+    # direct child leaves grandchildren running with our pipes open.
+    kwargs.setdefault("start_new_session", True)
+    process = subprocess.Popen(  # noqa: S603 - argument list, no shell
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+        **kwargs,
+    )
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+    readers = [
+        threading.Thread(
+            target=_drain_stream,
+            args=(process.stdout, stdout_lines, logger.info if log_output else None),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=_drain_stream,
+            args=(process.stderr, stderr_lines, logger.error if log_err else None),
+            daemon=True,
+        ),
+    ]
+    for reader in readers:
+        reader.start()
 
-    # Simultaneously read stdout and stderr
-    stdout_lines = []
-    stderr_lines = []
+    try:
+        return_code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        logger.error(f"{args[0]} ran longer than {timeout}s; killing it")
+        _kill_process_group(process)
+        process.wait()
+        raise
+    finally:
+        # The readers end when the pipes close; don't wait forever if a grandchild keeps one open
+        for reader in readers:
+            reader.join(timeout=5)
 
-    for line in process.stdout:
-        strpline = line.rstrip()
-        stdout_lines.append(strpline)
-        if log_output:
-            logger.info(strpline)
-    for line in process.stderr:
-        strpline = line.rstrip()
-        stderr_lines.append(strpline)
-        if log_err:
-            logger.error(strpline)
-
-    return_code = process.wait()
     output = "\n".join(stdout_lines)
     stderr = "\n".join(stderr_lines)
-
-    if return_code != 0:
-        raise subprocess.CalledProcessError(
-            return_code,
-            cmd,
-            output=output,
-            stderr=stderr,
-        )
-
-    return subprocess.CompletedProcess(
-        process.args,
-        process.returncode,
-        stdout=output,
-        stderr=stderr,
-    )
-
-
-def clean_dir(root: pathlib.Path) -> None:
-    """Recursively delete all files and directories in a directory.
-
-    Args:
-        root (pathlib.Path): The directory to clean.
-
-    Raises:
-        FileNotFoundError: If the directory does not exist.
-    """
-    for p in root.iterdir():
-        if p.is_dir():
-            clean_dir(p)
-        else:
-            p.unlink()
-
-    root.rmdir()
+    if return_code not in ok_returncodes:
+        raise subprocess.CalledProcessError(return_code, args, output=output, stderr=stderr)
+    return subprocess.CompletedProcess(args, return_code, stdout=output, stderr=stderr)

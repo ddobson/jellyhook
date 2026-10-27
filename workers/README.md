@@ -124,7 +124,7 @@ worker:
 The application is containerized using Docker. Environment variables control:
 - Media paths
 - RabbitMQ connection details
-- Temporary file storage
+- Temporary file storage (`TEMP_DIR`, or `temp_dir` per service). Put it on the same disk as the media if you can: a cross-disk swap has to copy the whole file onto the media disk first.
 - Debug mode
 - Environment type
 

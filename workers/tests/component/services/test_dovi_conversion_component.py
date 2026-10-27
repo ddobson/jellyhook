@@ -1,8 +1,12 @@
 import json
 import pathlib
+import subprocess
 from unittest.mock import Mock
 
-from workers import utils
+import pytest
+
+from workers import fileops, utils
+from workers.services import DoviConversionService
 
 DOVI_PROFLE_7 = 7
 DOVI_PROFLE_8 = 8
@@ -17,9 +21,17 @@ def _verify_dovi_profile(media_path, expected_profile):
         expected_profile: The expected Dolby Vision profile (7 or 8)
     """
     # Run ffprobe on the file
-    ffprobe_cmd = (
-        f"ffprobe -v quiet -print_format json -show_streams -select_streams v:0 {media_path}"
-    )
+    ffprobe_cmd = [
+        "ffprobe",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-select_streams",
+        "v:0",
+        media_path,
+    ]
     ffprobe_result = utils.run_command(ffprobe_cmd)
     media_info = json.loads(ffprobe_result.stdout)
 
@@ -108,50 +120,54 @@ def test_service_extracts_p7_layers(p7_service):
     assert str(pathlib.Path(el_video_path)) == str((p7_service.tmp_dir / "EL.hevc"))
 
 
-def test_p7_conversion_end_to_end(
-    p7_service,
-    monkeypatch,
-    mock_file_operations,
-    mock_completion_tracker,
-    spy_merge_mkv,
-    expected_dovi_commands,
-    run_command_mock,
-):
-    """Test full conversion flow from P7 to P8."""
-    # Setup mocks for file operations
-    mock_file_operations(p7_service)
+def test_p7_conversion_end_to_end(p7_service, run_command_mock, leftovers_beside):
+    """Convert a real P7 file in place: right tools run, the movie ends up as P8."""
+    movie_path = pathlib.Path(p7_service.movie.full_path)
+    assert p7_service.get_dovi_profile() == DOVI_PROFLE_7
 
-    # Setup completion tracker
-    mock_move, was_completed = mock_completion_tracker
-    monkeypatch.setattr(p7_service, "move_to_target", mock_move)
-
-    # Setup spy for merge_mkv
-    merge_spy_fn, get_output_path = spy_merge_mkv(p7_service)
-    monkeypatch.setattr(p7_service, "merge_mkv", merge_spy_fn)
-
-    # Get expected command calls
-    expected_calls = expected_dovi_commands(p7_service)
-
-    # Execute the conversion
     p7_service.exec()
 
-    # Verify the process ran to completion
-    assert was_completed() is True
+    tools = [call.args[0][0] for call in run_command_mock.call_args_list]
+    assert tools == [
+        "ffprobe",  # the check above
+        "ffprobe",
+        "mkvextract",
+        "dovi_tool",  # demux
+        "dovi_tool",  # extract BL RPU
+        "dovi_tool",  # extract EL RPU
+        "dovi_tool",  # convert
+        "mkvmerge",
+    ]
+    # The original path now holds the converted file; nothing else was left beside it
+    assert movie_path.exists()
+    _verify_dovi_profile(movie_path, DOVI_PROFLE_8)
+    assert leftovers_beside(movie_path) == []
 
-    # Verify expected commands were called
-    for expected_call in expected_calls:
-        assert expected_call in run_command_mock.call_args_list
 
-    # Get the output file path captured by our spy
-    final_output_path = get_output_path()
+def test_p7_conversion_is_idempotent(p7_service):
+    """Running the job twice (a redelivered message) leaves the finished file alone."""
+    movie_path = pathlib.Path(p7_service.movie.full_path)
+    p7_service.exec()
+    converted = movie_path.read_bytes()
 
-    # Verify we captured the output path from merge_mkv
-    assert final_output_path is not None
-    assert final_output_path.exists()
+    again = DoviConversionService(
+        p7_service.movie, fileops.make_job_dir(movie_path.parent.parent / "scratch", "again")
+    )
+    again.exec()
 
-    # Verify the converted video file exists
-    p8_hevc_path = pathlib.Path(p7_service.tmp_dir) / "P8.hevc"
-    assert p8_hevc_path.exists()
+    assert movie_path.read_bytes() == converted
 
-    # Run ffprobe on the output file and verify DoVi profile
-    _verify_dovi_profile(final_output_path, DOVI_PROFLE_8)
+
+def test_failed_conversion_leaves_the_original_untouched(p7_service, monkeypatch):
+    movie_path = pathlib.Path(p7_service.movie.full_path)
+    before = movie_path.read_bytes()
+
+    def explode(*args, **kwargs):
+        raise subprocess.CalledProcessError(2, ["mkvmerge"], stderr="boom")
+
+    monkeypatch.setattr(p7_service, "merge_mkv", explode)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        p7_service.exec()
+
+    assert movie_path.read_bytes() == before

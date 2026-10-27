@@ -149,54 +149,82 @@ def test_merge_mkv(dovi_service):
         assert result == pathlib.Path(f"{dovi_service.tmp_dir}/final_output.mkv")
 
 
-def test_move_to_target(dovi_service):
-    """Test moving final output to target location."""
-    # Create mock files
-    output_file = mock.MagicMock(spec=pathlib.Path)
-    target = "/path/to/movie.mkv"
+def test_move_to_target_swaps_the_file_in(dovi_service, tmp_path):
+    """The converted file replaces the original in one step."""
+    target = tmp_path / "movie.mkv"
+    target.write_bytes(b"original")
+    output_file = tmp_path / "final_output.mkv"
+    output_file.write_bytes(b"converted")
 
-    # Call the method
-    dovi_service.move_to_target(output_file, target)
+    dovi_service.move_to_target(output_file, str(target))
 
-    # Verify the original file is deleted and the new file is renamed
-    dovi_service.movie._file.unlink.assert_called_once()
-    output_file.rename.assert_called_once_with(target)
+    assert target.read_bytes() == b"converted"
+    assert not output_file.exists()
 
 
-def test_from_message_success(dovi_service_config):
+def test_move_to_target_failure_keeps_the_original(dovi_service, tmp_path):
+    """Nothing is deleted up front, so a failed swap cannot lose the movie."""
+    target = tmp_path / "movie.mkv"
+    target.write_bytes(b"original")
+    missing_output = tmp_path / "never_written.mkv"
+
+    with pytest.raises(FileNotFoundError):
+        dovi_service.move_to_target(missing_output, str(target))
+
+    assert target.read_bytes() == b"original"
+    dovi_service.movie._file.unlink.assert_not_called()
+
+
+def test_locked_path_is_the_movie_file(dovi_service):
+    assert dovi_service.locked_path == pathlib.Path(dovi_service.movie.full_path)
+
+
+def test_from_message_success(dovi_service_config, tmp_path):
     """Test creating service from a message - success case."""
-    # Mock the message
     message = {"Name": "Test Movie", "Year": "2023"}
+    config = {"temp_dir": str(tmp_path)}
 
     with (
-        mock.patch("workers.movie.Movie.from_file") as mock_from_file,
-        mock.patch("pathlib.Path") as mock_path,
-        mock.patch("workers.services.dovi_conversion.TEMP_DIR", "/data/tmp"),
+        mock.patch("workers.services.dovi_conversion.Movie.from_file") as mock_from_file,
         mock.patch(
             "workers.services.dovi_conversion.DoviConversionService.file_from_message"
         ) as mock_file_from_message,
     ):
-        # Setup the mock file result
         mock_file = mock.MagicMock()
         mock_file_from_message.return_value = mock_file
-
-        # Setup tmp_dir
-        mock_tmp_dir = mock.MagicMock()
-        mock_path.side_effect = lambda x: mock_tmp_dir
-
-        # Mock Movie.from_file to return a movie
         mock_movie = mock.MagicMock()
         mock_movie.folder_title = "Test Movie (2023)"
         mock_from_file.return_value = mock_movie
 
-        # Call the method
-        service = DoviConversionService.from_message(message, dovi_service_config)
+        first = DoviConversionService.from_message(message, config)
+        second = DoviConversionService.from_message(message, config)
 
-        # Verify the service was created
-        assert isinstance(service, DoviConversionService)
-        mock_file_from_message.assert_called_once_with(message)
-        mock_from_file.assert_called_once_with(mock_file)
-        mock_tmp_dir.mkdir.assert_called_once_with(exist_ok=True, parents=True)
+    assert isinstance(first, DoviConversionService)
+    mock_file_from_message.assert_called_with(message)
+    mock_from_file.assert_called_with(mock_file)
+    # Same title, different scratch directories: a redelivery cannot reuse stale files
+    assert first.tmp_dir != second.tmp_dir
+    assert first.tmp_dir.parent == tmp_path
+    assert first.tmp_dir.is_dir()
+
+
+def test_commands_are_argument_lists_with_paths_intact(dovi_service):
+    """Odd characters in file names must reach the tools untouched (no shell is involved)."""
+    nasty = '/media/It\'s $(a) "Test" (2023)/movie; rm -rf x.mkv'
+    dovi_service.movie._file.resolve.return_value = nasty
+
+    with mock.patch("workers.utils.run_command") as mock_run_command:
+        mock_run_command.return_value.stdout = "{}"
+        dovi_service.get_dovi_profile()
+        dovi_service.extract_video()
+        dovi_service.merge_mkv(nasty, "/tmp/P8.hevc")
+
+    probe, extract, merge = (call.args[0] for call in mock_run_command.call_args_list)
+    assert probe[-1] == nasty
+    assert extract[1] == nasty
+    assert merge[-1] == nasty
+    # mkvmerge exits 1 for warnings, which must not be treated as a failure
+    assert mock_run_command.call_args_list[2].kwargs["ok_returncodes"] == (0, 1)
 
 
 def test_from_message_no_movie_found(dovi_service_config):

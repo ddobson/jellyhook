@@ -386,44 +386,109 @@ def test_process_webhook_service_execution_error(orchestrator):
         mock_logger.error.assert_any_call("Service dovi_conversion failed: Dovi service failed")
 
 
-def test_cleanup(orchestrator):
-    """Test cleaning up temporary directories."""
-    # Create temp directories
-    orchestrator.temp_dirs = {Path("/tmp/service1"), Path("/tmp/service2")}
+def test_cleanup_removes_scratch_directories(orchestrator, tmp_path):
+    """Every registered directory is deleted, contents included."""
+    dirs = {tmp_path / "service1", tmp_path / "service2"}
+    for d in dirs:
+        (d / "nested").mkdir(parents=True)
+        (d / "nested" / "partial.hevc").write_bytes(b"x")
+    orchestrator.temp_dirs = set(dirs)
+
+    orchestrator.cleanup()
+
+    assert not any(d.exists() for d in dirs)
+    assert orchestrator.temp_dirs == set()
+
+
+def test_cleanup_ignores_directories_that_are_already_gone(orchestrator, tmp_path):
+    orchestrator.temp_dirs = {tmp_path / "never_created"}
+
+    orchestrator.cleanup()  # must not raise
+
+
+def test_process_webhook_registers_scratch_dir_before_exec_so_failures_still_clean_up(
+    orchestrator, tmp_path
+):
+    """A service that dies mid-run must still have its scratch directory removed."""
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "half_written.hevc").write_bytes(b"x")
+    service = mock.MagicMock()
+    service.tmp_dir = scratch
+    service.locked_path = None
+    service.exec.side_effect = RuntimeError("boom")
 
     with (
-        mock.patch("workers.utils.clean_dir") as mock_clean_dir,
-        mock.patch("workers.services.orchestrator.logger") as mock_logger,
+        mock.patch.object(orchestrator, "is_webhook_enabled", return_value=True),
+        mock.patch.object(orchestrator, "create_service_instance", return_value=service),
+        mock.patch.object(
+            orchestrator,
+            "get_enabled_services",
+            return_value=[{"name": "dovi_conversion", "config": {}}],
+        ),
     ):
-        # Mock utils.clean_dir
+        result = orchestrator.process_webhook({"Name": "Item A", "Year": 2023})
         orchestrator.cleanup()
 
-        # Each directory should be cleaned
-        assert mock_clean_dir.call_count == 2
-        mock_clean_dir.assert_any_call(Path("/tmp/service1"))
-        mock_clean_dir.assert_any_call(Path("/tmp/service2"))
-
-        # Logger info calls
-        assert mock_logger.info.call_count == 2
+    assert result.outcome is Outcome.FAILED
+    assert not scratch.exists()
 
 
-def test_cleanup_error(orchestrator):
-    """Test cleaning up temporary directories with errors."""
-    # Create temp directories
-    orchestrator.temp_dirs = {Path("/tmp/service1"), Path("/tmp/service2")}
+def test_process_webhook_message_cleans_up_even_when_processing_raises():
+    orchestrator = mock.MagicMock()
+    orchestrator.process_webhook.side_effect = RuntimeError("boom")
 
-    # Mock utils.clean_dir to raise exception
-    with (
-        mock.patch("workers.utils.clean_dir", side_effect=FileNotFoundError("Directory not found")),
-        mock.patch("workers.services.orchestrator.logger") as mock_logger,
-    ):
-        orchestrator.cleanup()
+    with mock.patch("workers.services.orchestrator.ServiceOrchestrator", return_value=orchestrator):
+        result = process_webhook_message("item_added", b"{}")
 
-        # Logger error calls
-        assert mock_logger.error.call_count == 2
-        mock_logger.error.assert_any_call(
-            "Failed to clean temporary directory /tmp/service1: Directory not found"
-        )
+    assert result.outcome is Outcome.FAILED
+    orchestrator.cleanup.assert_called_once()
+
+
+def test_services_that_modify_a_file_run_under_that_files_lock(orchestrator, tmp_path):
+    """Two jobs for the same file must not overlap; different files may."""
+    import threading
+    import time
+
+    movie = tmp_path / "movie.mkv"
+    movie.write_bytes(b"x")
+    running = 0
+    peak = 0
+    guard = threading.Lock()
+
+    def slow_exec():
+        nonlocal running, peak
+        with guard:
+            running += 1
+            peak = max(peak, running)
+        time.sleep(0.05)
+        with guard:
+            running -= 1
+
+    def make_service():
+        service = mock.MagicMock()
+        service.locked_path = movie
+        service.exec.side_effect = slow_exec
+        return service
+
+    threads = [
+        threading.Thread(target=orchestrator._run_service, args=(make_service(),)) for _ in range(4)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert peak == 1
+
+
+def test_services_without_a_locked_path_run_unlocked(orchestrator):
+    service = mock.MagicMock()
+    service.locked_path = None
+
+    orchestrator._run_service(service)
+
+    service.exec.assert_called_once()
 
 
 def test_process_webhook_message_success():
