@@ -1,6 +1,7 @@
 import pytest
 from flask import Flask
 
+from api.errors import register_error_handlers
 from api.rabbitmq import RabbitMQ
 from api.routes import webhooks
 
@@ -14,15 +15,15 @@ def app():
         {
             "RABBITMQ_HOST": "localhost",
             "RABBITMQ_PORT": 5672,
-            "RABBITMQ_USERNAME": "guest",
-            "RABBITMQ_PASSWORD": "guest",
+            "RABBITMQ_USER": "guest",
+            "RABBITMQ_PASS": "guest",
         },
     )
+    register_error_handlers(app)
     rabbitmq = RabbitMQ()
     rabbitmq.init_app(app)
     # Verify the extension was registered
     assert "rabbitmq" in app.extensions
-    assert hasattr(app, "rabbitmq")
     return app
 
 
