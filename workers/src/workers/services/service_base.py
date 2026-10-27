@@ -2,7 +2,7 @@ import pathlib
 from abc import ABC, abstractmethod
 
 from workers import config
-from workers.errors import WebhookWorkerError
+from workers.errors import MediaNotFoundError, WebhookWorkerError
 
 
 class ServiceBase(ABC):
@@ -41,7 +41,9 @@ class ServiceBase(ABC):
             pathlib.Path: The path to the file.
 
         Raises:
-            WebhookWorkerError: If no file is found or multiple files are found.
+            MediaNotFoundError: If no file is found (yet). Retryable: Jellyfin can announce an
+                item before the file has finished landing.
+            WebhookWorkerError: If multiple files are found.
         """
         file_types = [".mkv", ".mp4", ".avi"]
         search_result = []
@@ -64,7 +66,7 @@ class ServiceBase(ABC):
 
         if not search_result:
             err_msg = f"No video found for '{message['Name']}'"
-            raise WebhookWorkerError(err_msg)
+            raise MediaNotFoundError(err_msg)
 
         if len(search_result) != 1:
             err_msg = f"Found more than one video for '{message['Name']}'"

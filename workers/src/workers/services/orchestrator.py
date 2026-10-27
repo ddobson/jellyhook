@@ -28,7 +28,9 @@ from typing import Any
 
 from workers import utils
 from workers.config import WorkerConfig
+from workers.errors import ServiceConfigurationError, is_transient
 from workers.logger import logger
+from workers.results import ProcessingResult
 from workers.services.service_base import ServiceBase
 
 # Service name to module/class mappings
@@ -92,50 +94,54 @@ class ServiceOrchestrator:
             service_config (dict[str, Any]): The configuration for the service.
 
         Returns:
-            An instance of the service, or None if the service could not be created.
+            An instance of the service, or None if the service chose to skip this message.
+
+        Raises:
+            ServiceConfigurationError: If the service name is unknown or its module/class
+                cannot be loaded. That is a deployment problem, not a skip, so it must not be
+                quietly acknowledged.
         """
+        if service_name not in SERVICE_MODULES:
+            logger.error(f"Unknown service: {service_name}")
+            err_msg = f"Unknown service: {service_name}"
+            raise ServiceConfigurationError(err_msg)
+
         try:
-            if service_name not in SERVICE_MODULES:
-                logger.error(f"Unknown service: {service_name}")
-                return None
-
-            # Import the module
-            module_path = SERVICE_MODULES[service_name]
-            module = importlib.import_module(module_path)
-
-            # Get the service class
-            class_name = SERVICE_CLASSES[service_name]
-            service_class: type[ServiceBase] = getattr(module, class_name)
-
-            # Create the service instance
-            return service_class.from_message(message, service_config)
-
+            module = importlib.import_module(SERVICE_MODULES[service_name])
+            service_class: type[ServiceBase] = getattr(module, SERVICE_CLASSES[service_name])
         except (ImportError, AttributeError) as e:
             logger.error(f"Failed to import service {service_name}: {e}")
-            return None
+            err_msg = f"Failed to import service {service_name}: {e}"
+            raise ServiceConfigurationError(err_msg) from e
 
-    def process_webhook(self, message: dict[str, Any]) -> bool:
+        # Outside the try above: an AttributeError raised by the service itself is a bug in
+        # that service, and should surface as one rather than as a missing class.
+        return service_class.from_message(message, service_config)
+
+    def process_webhook(self, message: dict[str, Any]) -> ProcessingResult:
         """Process a webhook message with configured services.
 
         Args:
             message: The webhook message to process.
 
         Returns:
-            True if all services completed successfully, False otherwise.
+            A successful result if every service completed, a retry result if a failure may
+            clear up on its own (file not on disk yet, Jellyfin unreachable), or a failed
+            result otherwise.
         """
         # Skip processing if this webhook is disabled in config
         if not self.is_webhook_enabled():
             logger.info(f"Webhook {self.webhook_id} is disabled, skipping processing")
-            return True
+            return ProcessingResult.success()
 
         # Get the enabled services for this webhook
         enabled_services = self.get_enabled_services()
         if not enabled_services:
             logger.info(f"No enabled services configured for webhook {self.webhook_id}")
-            return True
+            return ProcessingResult.success()
 
         # Process each service in priority order
-        completed = True
+        failures: list[tuple[str, Exception]] = []
         for enabled_service in enabled_services:
             service_name = enabled_service.get("name")
             service_config = enabled_service.get("config", {})
@@ -165,9 +171,24 @@ class ServiceOrchestrator:
                 # In this implementation, we're keeping the existing behavior where
                 # metadata failures don't fail the entire process
                 if service_name != "metadata_update":
-                    completed = False
+                    failures.append((str(service_name), e))
 
-        return completed
+        return self._summarize_failures(failures)
+
+    @staticmethod
+    def _summarize_failures(failures: list[tuple[str, Exception]]) -> ProcessingResult:
+        """Collapse per-service failures into one result for the whole message.
+
+        Retrying is worthwhile if any failure is transient, even when another is not: the
+        permanent one will simply fail again and the message ends up dead-lettered.
+        """
+        if not failures:
+            return ProcessingResult.success()
+
+        reason = "; ".join(f"{name}: {type(e).__name__}: {e}" for name, e in failures)
+        if any(is_transient(e) for _, e in failures):
+            return ProcessingResult.retry(reason)
+        return ProcessingResult.failed(reason)
 
     def cleanup(self) -> None:
         """Clean up temporary directories created by services."""
@@ -179,7 +200,7 @@ class ServiceOrchestrator:
                 logger.error(f"Failed to clean temporary directory {tmp_dir}: {e}")
 
 
-def process_webhook_message(webhook_id: str, message_body: bytes) -> bool:
+def process_webhook_message(webhook_id: str, message_body: bytes) -> ProcessingResult:
     """Process a webhook message.
 
     This function is a convenience wrapper around the ServiceOrchestrator
@@ -190,12 +211,19 @@ def process_webhook_message(webhook_id: str, message_body: bytes) -> bool:
         message_body: The raw message body.
 
     Returns:
-        True if the message was successfully processed, False otherwise.
+        The result of processing, including whether a failure is worth retrying.
     """
+    # A body that isn't a JSON object will never parse on a retry
     try:
-        # Parse the message
         message = json.loads(message_body)
+    except ValueError as e:
+        logger.error(f"Invalid JSON in message for webhook {webhook_id}: {e}")
+        return ProcessingResult.failed(f"Invalid JSON: {e}")
+    if not isinstance(message, dict):
+        logger.error(f"Message for webhook {webhook_id} is not a JSON object")
+        return ProcessingResult.failed(f"Expected a JSON object, got {type(message).__name__}")
 
+    try:
         # Create the orchestrator
         orchestrator = ServiceOrchestrator(webhook_id)
 
@@ -208,4 +236,7 @@ def process_webhook_message(webhook_id: str, message_body: bytes) -> bool:
         return result
     except Exception as e:
         logger.error(f"Failed to process webhook {webhook_id}: {e}")
-        return False
+        reason = f"{type(e).__name__}: {e}"
+        return (
+            ProcessingResult.retry(reason) if is_transient(e) else ProcessingResult.failed(reason)
+        )
