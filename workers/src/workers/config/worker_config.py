@@ -5,6 +5,7 @@ from typing import Any
 import yaml
 
 from workers import utils
+from workers.logger import logger
 from workers.parsers import MovieNamingScheme
 
 
@@ -142,7 +143,11 @@ def load_config_file(filename: str) -> dict[str, Any]:
                 loaded = yaml.safe_load(f)
             else:
                 loaded = json.load(f)
-        # An empty YAML file loads as None, and a list or scalar is no use as a config
-        return loaded if isinstance(loaded, dict) else default
+        if isinstance(loaded, dict):
+            return loaded
+        # An empty YAML file loads as None, and a list or scalar is no use as a config. Say so:
+        # an empty config means no webhook runs any service, which looks like normal operation.
+        logger.warning(f"Ignoring {filename}: expected a mapping at the top level")
+        return default
     except (json.JSONDecodeError, yaml.YAMLError, IOError):
         return default

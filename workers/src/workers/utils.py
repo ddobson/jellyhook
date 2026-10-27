@@ -1,3 +1,4 @@
+import functools
 import os
 import signal
 import subprocess
@@ -34,17 +35,18 @@ class SingletonMeta(type):
         return cls._instances[cls]
 
 
-def timer(func: Callable[..., Any]) -> Callable[..., Any]:
+def timer[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     """Time the execution of a function.
 
     Args:
-        func (function): The function to time.
+        func: The function to time.
 
     Returns:
-        function: The wrapped function
+        The wrapped function, with the original signature and metadata.
     """
 
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
+    @functools.wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
