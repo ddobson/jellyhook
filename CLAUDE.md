@@ -113,6 +113,19 @@ are easy to break by accident.
   `stop_grace_period` to at least that plus 15 seconds.
 - **A restricted RabbitMQ user needs write access to `amq.default`**, not just the queue names,
   because retries and dead-lettering publish through the default exchange.
+- **Run external tools with an argument list, never a shell string.** `utils.run_command` takes a
+  list, has a timeout (six hours by default), drains stdout and stderr together, and kills the whole
+  process group on timeout. Pass `ok_returncodes=(0, 1)` for tools that use 1 for "warnings"
+  (mkvmerge).
+- **Never delete the original before the replacement is in place.** Use `fileops.replace_file`. It
+  swaps atomically and handles scratch space on another filesystem.
+- **Every job gets its own scratch directory** from `fileops.make_job_dir`, never one named after
+  the title. The orchestrator registers a service's `tmp_dir` before `exec()` and removes it in a
+  `finally`, so failures clean up too.
+- **Services that rewrite a file expose it as `locked_path`.** The orchestrator holds a per-file
+  lock for the duration of `exec()`.
+- **Get the Jellyfin client with `get_client()` at the point of use**, never at import time. It
+  connects lazily and raises a retryable `JellyfinUnavailableError` when Jellyfin is down.
 - **Running jobs concurrently is a setting, not the default.** All queues share
   `WORKER_MAX_CONCURRENT_JOBS` job slots (1); earlier versions ran one job per webhook.
 
@@ -196,8 +209,6 @@ Things that will trip you up, so you do not mistake them for something you broke
   correctly targets 3.13. pika and debugpy also have no type stubs. `make typecheck` ends with
   `|| true`, so it never fails the build; compare error counts before and after a change rather
   than expecting zero.
-- `workers.clients.jellyfin` authenticates with Jellyfin when it is imported, so importing the
-  services needs a reachable Jellyfin or a stub, and an outage at startup crashes the worker.
 - `api/tests/conftest.py` sets `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD`, which the API ignores.
 - The API publishes messages without persistence or publisher confirms, so events still waiting in
   the queue are lost if the broker restarts.

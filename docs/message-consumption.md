@@ -260,27 +260,42 @@ harmless, though the older worker goes back to dropping failed messages.
 These are properties of the current design, worth keeping in mind when reading the examples above.
 
 - **A retry re-runs every service for that event**, including ones that already succeeded, and a
-  redelivered event does the same. Services need to be safe to repeat, and that has not been
-  audited for every service. Be cautious with any service whose effect is not idempotent.
+  redelivered event does the same. Services have to be safe to repeat. Where each stands:
+  - `dovi_conversion`: safe. A finished conversion leaves a Profile 8 file, and a repeat sees that
+    and does nothing.
+  - `media_track_clean`: safe. After cleaning, every remaining stream is one it wants to keep, so a
+    repeat does nothing.
+  - `metadata_update`: safe. It only sends changes when the computed genres or tags differ.
+  - `playlist_assignment`: **not verified.** It POSTs the item to each matching playlist every
+    time. Whether Jellyfin ignores an item that is already in the playlist depends on the Jellyfin
+    version, and that has not been checked.
 - **At-least-once, not exactly-once.** After a crash or disconnect the same event can be processed
   twice.
-- **Dolby Vision conversion after an abandoned run.** A conversion cut off mid-way (shutdown past
-  the grace period, a broker restart) is redelivered and starts again from the beginning. What the
-  code does today:
-  - Once a conversion has *finished*, a repeat sees Profile 8 and does nothing, so repeating a
-    completed one is harmless.
-  - The original file is only touched in the last step, which deletes it and then renames the
-    finished file into place. An interruption before that leaves the original intact.
-  - Files from the abandoned run stay in the per-title temp directory, which the rerun reuses. The
-    rerun relies on mkvextract, dovi_tool and mkvmerge overwriting them; that has not been verified.
-  - If the process dies between the delete and the rename, or the rename fails because the temp
-    directory is on a different filesystem, the original is gone. The rerun then finds no video and
-    is retried until it is dead-lettered. The finished file should still be in the temp directory
-    and can be moved into place by hand.
+- **Abandoned conversions and cleans.** A job cut off mid-way (shutdown past the grace period, a
+  broker restart) is redelivered and starts again from the beginning. That is now harmless to the
+  library:
+  - Every run works in its own scratch directory (`<temp_dir>/<name>-<random>`), so a rerun never
+    reuses the half-written files of the run before it. The abandoned run's directory is cleaned
+    up when the worker finishes with it, or stays behind if the process was killed outright; it is
+    safe to delete by hand.
+  - The original file is never deleted or moved aside first. The finished file is written next to
+    it (copied there, as a hidden `.<name>.<random>.jellyhook-tmp` file, if the scratch directory
+    is on another filesystem) and then swapped in with one atomic rename. A crash at any point
+    leaves either the old file or the new one, never neither. A killed worker can leave a
+    `.jellyhook-tmp` file beside the movie; it is safe to delete.
+  - Scratch space needs room for a full copy of the movie (and for the extracted video stream
+    during a Dolby Vision conversion). If the media library also needs room for the staged copy
+    during the swap, that is another full copy on that disk.
 - **The API does not yet mark messages as persistent.** If RabbitMQ itself restarts, events that
   were still waiting in the queue are lost, although the queue survives. The worker's own retry and
   dead-letter copies are persistent.
 - **The retry delay is fixed.** It is part of the `.retry` queue's declaration. To change it, delete
   that queue first or RabbitMQ rejects the new settings.
-- **Two events for the same file are not coordinated.** They are processed one after another on a
-  single queue, but nothing stops two queues from touching the same file at once.
+- **File locks are per worker process.** Two jobs that rewrite the same file wait for each other
+  (an in-process lock keyed on the resolved path), even across queues. The lock does not reach
+  across several worker containers pointed at the same library; run one worker.
+- **External programs have a time limit.** Each ffmpeg, mkvmerge, mkvextract and dovi_tool run is
+  killed after six hours. A killed run is a permanent failure and lands on `.dead`; it is not
+  retried.
+- **Jellyfin is contacted on first use.** A Jellyfin that is down when the worker starts no longer
+  crashes it; the jobs that need Jellyfin fail as retryable and are tried again.
