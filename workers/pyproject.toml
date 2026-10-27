@@ -32,7 +32,13 @@ dev = [
 packages = ["src/workers"]
 
 [tool.pytest.ini_options]
+# The single source of pytest settings for this package (there used to be a second copy in
+# tests/pytest.ini, and which one applied depended on how pytest was invoked).
+testpaths = ["tests/unit", "tests/component"]
 # Integration tests start a RabbitMQ container; run them with `-m integration`.
-# (tests/pytest.ini covers runs that name a path under tests/; this covers a bare `pytest`.)
-addopts = "-m 'not integration'"
-markers = ["integration: needs Docker; runs against a real RabbitMQ (not part of the default run)"]
+addopts = "-v -m 'not integration'"
+markers = [
+    "unit: mark test as a unit test",
+    "component: mark test as a component test",
+    "integration: needs Docker; runs against a real RabbitMQ (not part of the default run)",
+]

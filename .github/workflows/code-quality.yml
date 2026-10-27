@@ -133,6 +133,8 @@ jobs:
     needs: setup
     name: Test Integration (real RabbitMQ)
     runs-on: ubuntu-24.04
+    # A hung Docker daemon or image pull would otherwise hold the runner for GitHub's 6 hour default
+    timeout-minutes: 20
     # Each package starts its own RabbitMQ container with the runner's Docker.
     # JELLYHOOK_IT_REQUIRED makes a missing Docker a failure instead of a silent skip.
     env:
@@ -154,6 +156,8 @@ jobs:
         run: uv run --active pytest -m integration tests/integration
 
       - name: Run Workers integration tests
+        # Even if the API suite failed, so one run shows every failure
+        if: ${{ !cancelled() }}
         working-directory: ./workers
         run: uv run --active pytest -m integration tests/integration
 

@@ -41,10 +41,10 @@ test:
 # skips) when it is not: asking for the integration tests and silently getting none would be worse.
 test_integration:
 	@echo "Running integration tests (needs Docker)..."
-	@for dir in api workers; do \
+	@status=0; for dir in api workers; do \
 		echo "Integration testing $${dir}..."; \
-		cd $${dir} && JELLYHOOK_IT_REQUIRED=1 uv run --active pytest -m integration tests/integration && cd ..; \
-	done
+		(cd $${dir} && JELLYHOOK_IT_REQUIRED=1 uv run --active pytest -m integration tests/integration) || status=1; \
+	done; exit $$status
 
 test_cov: REPORT ?= html
 test_cov:

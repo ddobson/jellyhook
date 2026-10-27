@@ -123,22 +123,24 @@ def test_a_job_killed_mid_run_is_picked_up_again_by_the_next_worker(
     broker, queue, markers, processes
 ):
     """Kill -9 / OOM / power cut: no goodbye. At-least-once means the next worker runs it."""
-    support.publish(broker, queue, json.dumps({"id": 3, "sleep": 60}))
+    support.publish(broker, queue, json.dumps({"id": 3, "sleep": 60, "sleep_on_rerun": 0}))
     first = fake_worker(broker, queue, markers, processes)
     assert support.wait_until(lambda: started(markers, 3), timeout=30)
 
     first.kill()
     first.wait()
-    # Same message, now short, can't be edited: publish nothing new, the redelivery is the test
-    second = fake_worker(broker, queue, markers, processes)
+    second = fake_worker(broker, queue, markers, processes)  # nothing new is published
 
-    assert support.wait_until(lambda: len(started(markers, 3)) == 2, timeout=30)
+    assert support.wait_until(lambda: finished(markers, 3), timeout=30)
     assert {name.split("-")[2] for name in started(markers, 3)} == {
         str(first.pid),
         str(second.pid),
     }
-    second.send_signal(signal.SIGTERM)  # nothing finished: just prove it still exits cleanly
-    reap(second)
+    assert [name.split("-")[2] for name in finished(markers, 3)] == [str(second.pid)]
+    # The redelivered job completed and was acknowledged: nothing left ready or unacknowledged
+    assert support.wait_until(lambda: support.total_count(broker, queue) == 0)
+    second.send_signal(signal.SIGTERM)
+    assert reap(second) == 0
 
 
 def test_the_worker_exits_nonzero_when_the_broker_restarts_and_the_next_one_carries_on(

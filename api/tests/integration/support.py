@@ -114,6 +114,19 @@ def wait_ready(broker: Broker, timeout: float = 90) -> None:
         raise RuntimeError(f"RabbitMQ did not become ready in {timeout}s:\n{logs}")
 
 
+def ensure_running(broker: Broker) -> None:
+    """Bring the broker back if an earlier test left it stopped or down.
+
+    The broker is shared by the whole session and some tests stop, kill or restart it. If one of
+    those fails half way, this stops every later test from failing with a confusing connection
+    error that points away from the real cause.
+    """
+    if _accepts_connections(broker):
+        return
+    docker("start", broker.container, check=False)
+    wait_ready(broker)
+
+
 def start_broker() -> Broker:
     """Start a throwaway RabbitMQ container on a free port and wait for it."""
     name = f"jellyhook-it-{uuid.uuid4().hex[:8]}"

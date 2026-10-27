@@ -107,8 +107,12 @@ def test_a_queue_declared_with_different_arguments_is_a_503_not_a_lost_message(
     assert support.ready_count(broker, item_queue) == 0
 
 
-def test_publishing_to_a_missing_virtual_host_or_bad_credentials_is_a_503(live_app):
-    live_app.config["RABBITMQ_PASS"] = "wrong"  # noqa: S105
+@pytest.mark.parametrize(
+    ("setting", "value"),
+    [("RABBITMQ_PASS", "wrong"), ("RABBITMQ_VHOST", "no-such-vhost")],
+)
+def test_bad_credentials_or_a_missing_virtual_host_is_a_503(live_app, setting, value):
+    live_app.config[setting] = value
 
     response = post(live_app)
 

@@ -282,6 +282,6 @@ def test_without_write_access_to_the_default_exchange_the_worker_cannot_settle(
         running.thread.join(30)
         assert not running.alive  # it stops (so Docker restarts it) instead of losing the message
         assert any(isinstance(e, AMQPError) for e in running.errors)
-        assert support.ready_count(broker, queue) + support.unacked_count(broker, queue) == 1
+        assert support.total_count(broker, queue) == 1  # still there, ready or being redelivered
     finally:
         support.rabbitmqctl(broker, "delete_user", user)

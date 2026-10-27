@@ -111,6 +111,19 @@ def wait_ready(broker: Broker, timeout: float = 90) -> None:
         raise RuntimeError(f"RabbitMQ did not become ready in {timeout}s:\n{logs}")
 
 
+def ensure_running(broker: Broker) -> None:
+    """Bring the broker back if an earlier test left it stopped or down.
+
+    The broker is shared by the whole session and some tests stop, kill or restart it. If one of
+    those fails half way, this stops every later test from failing with a confusing connection
+    error that points away from the real cause.
+    """
+    if _accepts_connections(broker):
+        return
+    docker("start", broker.container, check=False)
+    wait_ready(broker)
+
+
 def start_broker() -> Broker:
     """Start a throwaway RabbitMQ container on a free port and wait for it."""
     name = f"jellyhook-it-{uuid.uuid4().hex[:8]}"
@@ -205,11 +218,25 @@ def ready_count(broker: Broker, queue: str) -> int:
 
 def unacked_count(broker: Broker, queue: str) -> int:
     """Messages delivered to a consumer but not yet acknowledged."""
-    output = rabbitmqctl(broker, "list_queues", "name", "messages_unacknowledged", "--quiet")
+    return _queue_figure(broker, queue, "messages_unacknowledged")
+
+
+def total_count(broker: Broker, queue: str) -> int:
+    """Ready plus unacknowledged, read in one call so a redelivery cannot fall between two reads."""
+    return _queue_figure(broker, queue, "messages")
+
+
+def _queue_figure(broker: Broker, queue: str, column: str) -> int:
+    """One numeric column of `rabbitmqctl list_queues` for one queue (0 if absent).
+
+    Lines that are not `<name><TAB><number>` (warnings, banners) are skipped rather than fatal,
+    because this runs inside polling loops.
+    """
+    output = rabbitmqctl(broker, "list_queues", "name", column, "--quiet")
     for line in output.splitlines():
-        name, _, count = line.rpartition("\t")
-        if name == queue:
-            return int(count)
+        name, _, figure = line.rpartition("\t")
+        if name == queue and figure.strip().isdigit():
+            return int(figure)
     return 0
 
 

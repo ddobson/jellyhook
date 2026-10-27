@@ -6,6 +6,7 @@ run (see `testpaths` in pytest.ini). Run them with `make test_integration` or
 JELLYHOOK_IT_REQUIRED=1, which CI sets so a missing Docker is a failure rather than a silent skip.
 """
 
+import contextlib
 import os
 import threading
 import uuid
@@ -39,11 +40,14 @@ def broker() -> Iterator[Broker]:
 @pytest.fixture
 def queue(broker: Broker) -> Iterator[str]:
     """A unique work-queue name. The queue and its retry/dead companions are removed afterwards."""
+    support.ensure_running(broker)
     name = f"it:{uuid.uuid4().hex[:10]}"
     yield name
-    support.delete_queues(
-        broker, name, topology.retry_queue_name(name), topology.dead_queue_name(name)
-    )
+    # Names are unique, so a queue leaked by a failed teardown harms nobody
+    with contextlib.suppress(Exception):
+        support.delete_queues(
+            broker, name, topology.retry_queue_name(name), topology.dead_queue_name(name)
+        )
 
 
 @pytest.fixture

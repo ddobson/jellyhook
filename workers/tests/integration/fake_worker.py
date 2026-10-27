@@ -27,8 +27,12 @@ def job(webhook_id: str, body: bytes) -> ProcessingResult:
     """Sleep as the message says, recording when the job started and finished."""
     message = json.loads(body)
     markers = pathlib.Path(os.environ["FAKE_MARKER_DIR"])
+    earlier_runs = list(markers.glob(f"started-{message['id']}-*"))
     (markers / f"started-{message['id']}-{os.getpid()}").touch()
-    threading.Event().wait(message.get("sleep", 0))
+    seconds = message.get("sleep", 0)
+    if earlier_runs:  # a redelivery; "sleep_on_rerun" lets a test make it short without editing
+        seconds = message.get("sleep_on_rerun", seconds)
+    threading.Event().wait(seconds)
     (markers / f"finished-{message['id']}-{os.getpid()}").touch()
     return ProcessingResult.success()
 

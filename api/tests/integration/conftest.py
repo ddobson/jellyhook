@@ -4,6 +4,7 @@ Not part of the default run: `uv run pytest -m integration tests/integration`, o
 `make test_integration`. Without Docker the tests are skipped, unless JELLYHOOK_IT_REQUIRED=1.
 """
 
+import contextlib
 import os
 import uuid
 from collections.abc import Iterator
@@ -31,9 +32,12 @@ def broker() -> Iterator[Broker]:
 @pytest.fixture
 def queue(broker: Broker) -> Iterator[str]:
     """A unique queue name that is deleted afterwards."""
+    support.ensure_running(broker)
     name = f"it:{uuid.uuid4().hex[:10]}"
     yield name
-    support.delete_queues(broker, name)
+    # Names are unique, so a queue leaked by a failed teardown harms nobody
+    with contextlib.suppress(Exception):
+        support.delete_queues(broker, name)
 
 
 @pytest.fixture

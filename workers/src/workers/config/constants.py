@@ -1,12 +1,31 @@
 import os
 
+
+def _port_from_env(name: str, default: int) -> int:
+    """Read a port from the environment: blank means the default, junk is a clear error.
+
+    Some platforms inject `<SERVICE>_PORT=tcp://host:port` for a service named `rabbitmq` (legacy
+    Docker links, Kubernetes service links), which `int()` alone reports as a bare ValueError.
+    """
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(
+            f"{name} must be a port number, got {raw!r}. If the platform injects this variable "
+            f"for a service named rabbitmq, set {name} explicitly to override it."
+        ) from None
+
+
 DEBUG = bool(int(os.getenv("DEBUG", "0")))
 MOVIE_PATH = os.getenv("MOVIE_PATH", "/data/media/movies")
 STANDUP_PATH = os.getenv("STANDUP_PATH", "/data/media/stand-up")
 MEDIA_PATHS = (MOVIE_PATH, STANDUP_PATH)
 JELLYHOOK_CONFIG_PATH = os.getenv("JELLYHOOK_CONFIG_PATH", "/config/jellyhook.json")
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
-RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
+RABBITMQ_PORT = _port_from_env("RABBITMQ_PORT", 5672)
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
 TEMP_DIR = os.getenv("TEMP_DIR", "/data/tmp")
