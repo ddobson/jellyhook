@@ -3,12 +3,29 @@ networks:
     name: jellyhook
     driver: bridge
 
+volumes:
+  # Queue data. Without this, recreating the container discards every queued message.
+  rabbitmq_data:
+
 services:
   rabbitmq:
     image: rabbitmq:4.0.5-management-alpine
+    # RabbitMQ keys its data directory on the node name, which derives from the hostname.
+    # Pinning it keeps the volume usable after the container is recreated.
+    hostname: rabbitmq
+    restart: unless-stopped
     ports:
       - "5672:5672"
       - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/10-jellyhook.conf:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     networks:
       - jellyhook
 
@@ -19,6 +36,7 @@ services:
       args:
         ENV: development
     image: jellyhook:api-local
+    restart: unless-stopped
     ports:
       - "5001:5001"
     volumes:
@@ -26,12 +44,24 @@ services:
     networks:
       - jellyhook
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     environment:
       FLASK_APP: api/main.py
       FLASK_ENV: development
       SECRET_KEY: "SuperSecretKey"
     command: flask --app api.main --debug run --host=0.0.0.0 --port=5001
+    # The image's own healthcheck targets gunicorn on :8000. This override targets the dev server.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:5001/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   worker:
     build:
@@ -40,6 +70,12 @@ services:
       args:
         ENV: development
     image: jellyhook:worker-local
+    restart: unless-stopped
+    # Run a tiny init as PID 1 so signals reach Python and orphaned ffmpeg/mkvmerge children are
+    # reaped. The worker has no SIGTERM handler yet (Phase 2), so a stop is still abrupt.
+    init: true
+    # Raise this once the worker drains in-flight jobs on SIGTERM (Phase 2).
+    stop_grace_period: 30s
     ports:
       - "5678:5678"
     volumes:
@@ -58,7 +94,8 @@ services:
     networks:
       - jellyhook
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     env_file:
       - ./workers/.env
     environment:

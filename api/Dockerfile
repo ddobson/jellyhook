@@ -22,15 +22,15 @@ RUN sh /uv-installer.sh && rm /uv-installer.sh
 # Ensure the installed binary is on the `PATH`
 ENV PATH="/root/.local/bin/:$PATH"
 
-# Copy project files
-COPY pyproject.toml README.md ./
+# Copy project files (uv.lock pins the exact dependency versions)
+COPY pyproject.toml uv.lock README.md ./
 COPY src ./src/
 
-# Install python dependencies
+# Install python dependencies exactly as locked (--frozen: never re-resolve)
 RUN if [ "$ENV" = "development" ]; then \
-        uv export > requirements.txt; \
+        uv export --frozen > requirements.txt; \
     else \
-        uv export --no-dev > requirements.txt; \
+        uv export --frozen --no-dev > requirements.txt; \
     fi && \
     uv pip install --system --no-cache-dir -r requirements.txt && \
     rm requirements.txt
@@ -50,5 +50,17 @@ ENV FLASK_ENV=production
 # Expose the port the app runs on
 EXPOSE 8000
 
+# Uses the stdlib so the image needs no curl at runtime.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+
 # Command to run the application
-CMD ["gunicorn", "api.main:app", "--bind", "0.0.0.0:8000"]
+# 2 workers x 4 threads: a slow RabbitMQ connect no longer blocks every other webhook (a burst
+# from a library scan), and the 60s timeout outlasts pika's connect timeout. Logs go to stdout.
+CMD ["gunicorn", "api.main:app", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "2", \
+     "--threads", "4", \
+     "--timeout", "60", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-"]

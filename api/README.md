@@ -40,12 +40,17 @@ JellyHook API receives and processes webhook events from Jellyfin (a media serve
 
 ### Environment Variables
 
+These are the names `api/config.py` actually reads. Using any other name (for example
+`RABBITMQ_USERNAME`) is silently ignored and the API falls back to the `guest` defaults.
+
 - `FLASK_ENV`: Set to 'development' or 'production'
-- `RABBITMQ_HOST`: RabbitMQ server hostname
-- `RABBITMQ_PORT`: RabbitMQ server port
-- `RABBITMQ_USERNAME`: RabbitMQ username
-- `RABBITMQ_PASSWORD`: RabbitMQ password
+- `SECRET_KEY`: Flask secret key (production)
+- `RABBITMQ_HOST`: RabbitMQ server hostname (default `rabbitmq`)
+- `RABBITMQ_USER`: RabbitMQ username (default `guest`)
+- `RABBITMQ_PASS`: RabbitMQ password (default `guest`)
 - `RABBITMQ_VHOST`: RabbitMQ virtual host
+
+The RabbitMQ port is not configurable through the environment; it is always 5672.
 
 ### Testing
 

@@ -8,10 +8,11 @@ from loguru import logger
 from api.config import Env
 
 # Completely silence specific libraries
-SILENCED_LOGGERS = (
-    "werkzeug",  # Flask's development server
-    "pika",  # RabbitMQ client
-)
+SILENCED_LOGGERS = ("werkzeug",)  # Flask's development server
+
+# Libraries that stay visible, but only at warning level and above. pika reports connection
+# failures and heartbeat timeouts here, which are the first clue when publishes start failing.
+QUIETED_LOGGERS = ("pika",)
 
 
 def _format_json_message(record):
@@ -98,6 +99,10 @@ def init_app(app: Flask):
             log.handlers = []
             log.addHandler(LoguruHandler())
             log.propagate = False
+
+    # Child loggers (e.g. pika.adapters.*) inherit this level
+    for logger_name in QUIETED_LOGGERS:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
 
     # Override root logger with our custom handler but maintain propagation=False
     # to prevent double logging
