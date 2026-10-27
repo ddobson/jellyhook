@@ -30,3 +30,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/workers"]
+
+[tool.pytest.ini_options]
+# Integration tests start a RabbitMQ container; run them with `-m integration`.
+# (tests/pytest.ini covers runs that name a path under tests/; this covers a bare `pytest`.)
+addopts = "-m 'not integration'"
+markers = ["integration: needs Docker; runs against a real RabbitMQ (not part of the default run)"]

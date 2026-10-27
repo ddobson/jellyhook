@@ -36,6 +36,7 @@ def open_connection() -> BlockingConnection:
     return BlockingConnection(
         pika.ConnectionParameters(
             host=config.RABBITMQ_HOST,
+            port=config.RABBITMQ_PORT,
             credentials=credentials,
             heartbeat=config.RABBITMQ_HEARTBEAT,
             blocked_connection_timeout=300,

@@ -29,6 +29,9 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+# Integration tests start a RabbitMQ container; run them with `-m integration`
+addopts = "-m 'not integration'"
+markers = ["integration: needs Docker; runs against a real RabbitMQ (not part of the default run)"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/api"]

@@ -129,6 +129,34 @@ jobs:
           flags: unittests
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  test_integration:
+    needs: setup
+    name: Test Integration (real RabbitMQ)
+    runs-on: ubuntu-24.04
+    # Each package starts its own RabbitMQ container with the runner's Docker.
+    # JELLYHOOK_IT_REQUIRED makes a missing Docker a failure instead of a silent skip.
+    env:
+      JELLYHOOK_IT_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          cache-suffix: ${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Pull the RabbitMQ image once
+        run: docker pull rabbitmq:4.0.5-alpine
+
+      - name: Run API integration tests
+        working-directory: ./api
+        run: uv run --active pytest -m integration tests/integration
+
+      - name: Run Workers integration tests
+        working-directory: ./workers
+        run: uv run --active pytest -m integration tests/integration
+
   test_workers_component:
     name: Test Workers Component
     runs-on: ubuntu-24.04
