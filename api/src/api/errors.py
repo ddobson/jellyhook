@@ -21,7 +21,9 @@ def register_error_handlers(app: Flask) -> None:
     """
 
     @app.errorhandler(HTTPException)
-    def handle_http_exception(e: HTTPException):
+    def handle_http_exception(
+        e: HTTPException,
+    ) -> tuple[dict[str, str], int, dict[str, str]]:
         # Keep headers that matter to the client (Allow on a 405, WWW-Authenticate on a 401)
         # but not the HTML content headers: the body is JSON.
         headers = {
@@ -29,10 +31,10 @@ def register_error_handlers(app: Flask) -> None:
             for name, value in e.get_headers()
             if name.lower() not in {"content-type", "content-length"}
         }
-        return {"error": e.description}, e.code, headers
+        return {"error": e.description or ""}, e.code or 500, headers
 
     @app.errorhandler(PublishError)
-    def handle_publish_error(e: PublishError):
+    def handle_publish_error(e: PublishError) -> tuple[dict[str, str], int, dict[str, str]]:
         logger.error(f"Webhook not queued: {e}")
         return (
             {"error": "Message queue unavailable, try again shortly"},
@@ -41,6 +43,6 @@ def register_error_handlers(app: Flask) -> None:
         )
 
     @app.errorhandler(Exception)
-    def handle_exception(e: Exception):
+    def handle_exception(e: Exception) -> tuple[dict[str, str], int]:
         logger.exception(f"Unhandled exception: {e}")
         return {"error": "Internal server error"}, 500

@@ -60,7 +60,9 @@ def free_port() -> int:
         return int(s.getsockname()[1])
 
 
-def wait_until(condition: Callable[[], bool], timeout: float = 20, interval: float = 0.05) -> bool:
+def wait_until(
+    condition: Callable[[], object], timeout: float = 20, interval: float = 0.05
+) -> bool:
     """Poll until `condition()` is truthy. Returns False if the timeout passes first."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -178,7 +180,8 @@ def establish_queue(broker: Broker, queue: str) -> None:
 def rabbitmqctl(broker: Broker, *args: str) -> str:
     """Run rabbitmqctl inside the container and return its output."""
     # As the rabbitmq user: a root exec can create a root-owned Erlang cookie the broker cannot read
-    return docker("exec", "-u", "rabbitmq", broker.container, "rabbitmqctl", *args).stdout
+    result = docker("exec", "-u", "rabbitmq", broker.container, "rabbitmqctl", *args)
+    return str(result.stdout)
 
 
 def publish(
@@ -242,7 +245,7 @@ def _queue_figure(broker: Broker, queue: str, column: str) -> int:
 
 def take_all(broker: Broker, queue: str) -> list[tuple[pika.BasicProperties, bytes]]:
     """Remove and return every message currently on a queue, with its properties."""
-    taken = []
+    taken: list[tuple[pika.BasicProperties, bytes]] = []
     with connect(broker) as connection:
         channel = connection.channel()
         while True:

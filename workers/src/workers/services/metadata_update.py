@@ -22,11 +22,11 @@ class MetadataUpdateService(ServiceBase):
         self,
         movie: Movie,
         item_id: str,
-        path_rules: list[str] = None,
-        pattern_rules: list[str] = None,
-        original_genres: list[str] = None,
-        original_tags: list[str] = None,
-        item_data: dict[str, Any] = None,
+        path_rules: list[dict[str, Any]] | None = None,
+        pattern_rules: list[dict[str, Any]] | None = None,
+        original_genres: list[str] | None = None,
+        original_tags: list[str] | None = None,
+        item_data: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the MetadataUpdateService.
 
@@ -49,7 +49,7 @@ class MetadataUpdateService(ServiceBase):
         self.original_genres = original_genres or []
         self.original_tags = original_tags or []
         self.item_data = item_data or {}
-        self.matching_rules = []
+        self.matching_rules: list[dict[str, Any]] = []
 
     def exec(self) -> None:
         """Execute the metadata update process.

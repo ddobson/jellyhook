@@ -105,6 +105,7 @@ from workers.parsers.movies import TrashMovieParser
 )
 def test_trash_format(filename, expected):
     result = TrashMovieParser.parse(filename)
+    assert result is not None
     assert result.get("title") == expected.get("title")
     assert result.get("year") == expected.get("year")
     assert result.get("quality") == expected.get("quality")

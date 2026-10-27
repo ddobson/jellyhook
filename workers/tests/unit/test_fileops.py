@@ -198,8 +198,10 @@ def test_media_file_lock_serialises_the_same_file(tmp_path):
                 running -= 1
 
     threads = [threading.Thread(target=work) for _ in range(5)]
-    [t.start() for t in threads]
-    [t.join() for t in threads]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
     assert peak == 1
 
@@ -212,8 +214,10 @@ def test_media_file_lock_lets_different_files_run_together(tmp_path):
             barrier.wait()  # only passes if both threads are inside their locks at once
 
     threads = [threading.Thread(target=work, args=(n,)) for n in ("a.mkv", "b.mkv")]
-    [t.start() for t in threads]
-    [t.join() for t in threads]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
     assert not barrier.broken
 

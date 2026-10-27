@@ -1,11 +1,16 @@
 import json
 import logging
 import sys
+from types import FrameType
+from typing import TYPE_CHECKING
 
-from flask import Flask, request
+from flask import Flask, Response, request
 from loguru import logger
 
 from api.config import Env
+
+if TYPE_CHECKING:
+    from loguru import Logger, Record
 
 # Completely silence specific libraries
 SILENCED_LOGGERS = ("werkzeug",)  # Flask's development server
@@ -15,7 +20,7 @@ SILENCED_LOGGERS = ("werkzeug",)  # Flask's development server
 QUIETED_LOGGERS = ("pika",)
 
 
-def _format_json_message(record):
+def _format_json_message(record: "Record") -> None:
     """Pretty print dict, list or JSON string log messages."""
     message = record["message"]
 
@@ -34,30 +39,29 @@ def _format_json_message(record):
     elif isinstance(message, (dict, list)):
         record["message"] = json.dumps(message, indent=2)
 
-    return record
-
 
 class LoguruHandler(logging.Handler):
     """Custom handler to route stdlib logging to loguru."""
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         """Emit a log record."""
         # Get corresponding Loguru level if it exists
         try:
-            level = logger.level(record.levelname).name
+            level: str | int = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
 
         # Find caller from where originated the logged message
-        frame, depth = logging.currentframe(), 2
-        while frame.f_code.co_filename == logging.__file__:
+        frame: FrameType | None = logging.currentframe()
+        depth = 2
+        while frame is not None and frame.f_code.co_filename == logging.__file__:
             frame = frame.f_back
             depth += 1
 
         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 
-def init_app(app: Flask):
+def init_app(app: Flask) -> "Logger":
     """Initialize logging configuration for the Flask app.
 
     Args:
@@ -113,11 +117,11 @@ def init_app(app: Flask):
 
     # Request logging middleware
     @app.before_request
-    def log_request_info():
+    def log_request_info() -> None:
         logger.info(f"Request: {request.method} {request.path}")
 
     @app.after_request
-    def log_response_info(response):
+    def log_response_info(response: Response) -> Response:
         logger.info(f"Response: {response.status_code}")
         return response
 
@@ -125,7 +129,7 @@ def init_app(app: Flask):
     app.logger.handlers = []
     app.logger.addHandler(LoguruHandler())
     app.logger.propagate = False
-    app.logger = logger
+    app.logger = logger  # type: ignore[assignment]  # loguru stands in for logging.Logger
 
     # Log app initialization
     logger.info(f"Flask app '{app.name}' initialized with loguru")

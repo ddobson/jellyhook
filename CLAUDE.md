@@ -178,7 +178,7 @@ Preferred when changes only apply to a single package
 - Test Package: `cd <package_name> && uv run pytest`
 - Lint code: `cd <package_name> && uv run ruff check --fix --config=../ruff.toml .`
 - Format code: `cd <package_name> && uv run ruff format --config=../ruff.toml .`
-- Type check: `cd <package_name> && uv run mypy --config-file=../mypy.ini src`
+- Type check: `cd <package_name> && uv run mypy --config-file=../mypy.ini .` (must report zero errors; CI enforces it)
 
 These commands are useful for running tasks against both main components at once
 
@@ -210,7 +210,8 @@ integration test as well as a unit test, and check the new test fails when the b
 
 ## Code Style Guidelines
 - Python version: 3.13+
-- Strict typing required (mypy)
+- Strict typing required (mypy, zero errors, enforced in CI). Tests are checked too, but
+  `mypy.ini` does not require annotations on test functions
 - Use modern Python type hints (eg. `list[str]` not `typing.List[str]`)
 - Use union syntax (eg. `str | None` not `typing.Optional[str]`)
 - Line length: 100 characters max
@@ -235,9 +236,8 @@ integration test as well as a unit test, and check the new test fails when the b
 
 Things that will trip you up, so you do not mistake them for something you broke:
 
-- `mypy.ini` pins `python_version = 3.10`, which reports false `StrEnum` errors in code that
-  correctly targets 3.13. pika and debugpy also have no type stubs. `make typecheck` ends with
-  `|| true`, so it never fails the build; compare error counts before and after a change rather
-  than expecting zero.
+- pika, jellyfin_apiclient_python and debugpy ship no type stubs, so `mypy.ini` ignores their
+  missing imports (per module, not globally); anything they return is `Any`. loguru's `Logger` and
+  `Record` exist only in its stubs, so import them under `TYPE_CHECKING` and quote the annotation.
 - `/hooks/*` has no authentication unless `WEBHOOK_TOKEN` is set. It is optional so existing
   Jellyfin webhook setups keep working; the API logs a warning at startup when it is unset.

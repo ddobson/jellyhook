@@ -343,6 +343,7 @@ def test_media_track_clean_service_from_message(mock_movie_class, mock_file_from
     mock_movie_class.from_file.assert_called_once_with(mock_file_path)
 
     # Verify service attributes
+    assert isinstance(service, MediaTrackCleanService)
     assert service.movie == mock_movie
     assert service.config.keep_original is False
     assert service.config.keep_default is True  # Default value

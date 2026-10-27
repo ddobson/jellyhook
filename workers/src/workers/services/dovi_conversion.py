@@ -80,11 +80,11 @@ class DoviConversionService(ServiceBase):
 
         logger.info(f"Conversion complete for '{self.movie.full_title}'")
 
-    def get_dovi_profile(self) -> int:
+    def get_dovi_profile(self) -> int | None:
         """Return the Dolby Vision profile version of the movie.
 
         Returns:
-            int: The Dolby Vision profile version.
+            The Dolby Vision profile version, or None if the video has none.
 
         """
         cmd = [
@@ -102,7 +102,7 @@ class DoviConversionService(ServiceBase):
         media_info = json.loads(completed.stdout)
 
         try:
-            dovi_profile = media_info["streams"][0]["side_data_list"][0]["dv_profile"]
+            dovi_profile: int | None = media_info["streams"][0]["side_data_list"][0]["dv_profile"]
         except (IndexError, KeyError):
             dovi_profile = None
 

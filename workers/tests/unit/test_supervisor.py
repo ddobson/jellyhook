@@ -23,7 +23,7 @@ def test_clean_shutdown_exits_zero():
 def test_consumers_receive_the_shutdown_grace():
     stop = threading.Event()
     received = []
-    consumer = make_consumer("a", lambda grace: (received.append(grace), stop.wait()))
+    consumer = make_consumer("a", lambda grace: (received.append(grace), stop.wait()))  # type: ignore[func-returns-value]
     threading.Timer(0.05, stop.set).start()
 
     supervise([consumer], stop, shutdown_grace=42)
@@ -39,7 +39,7 @@ def test_crashed_consumer_stops_everything_and_exits_non_zero():
         raise ConnectionError("broker went away")
 
     healthy_saw_stop = threading.Event()
-    healthy = make_consumer("healthy", lambda grace: (stop.wait(), healthy_saw_stop.set()))
+    healthy = make_consumer("healthy", lambda grace: (stop.wait(), healthy_saw_stop.set()))  # type: ignore[func-returns-value]
 
     code = supervise([make_consumer("bad", crash), healthy], stop, shutdown_grace=1)
 

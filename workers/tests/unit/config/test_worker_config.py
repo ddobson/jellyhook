@@ -1,6 +1,7 @@
 import json
 from unittest import mock
 
+import pytest
 import yaml
 
 from workers.config.worker_config import WorkerConfig, load_config_file
@@ -182,3 +183,24 @@ def test_load_config_file_yaml(tmp_path):
 
     # Check the result
     assert result == config_data
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("empty.yaml", ""),
+        ("list.yaml", "- a\n- b\n"),
+        ("list.json", "[1, 2]"),
+        ("scalar.json", "42"),
+    ],
+)
+def test_load_config_file_without_a_mapping_is_empty(tmp_path, filename, content):
+    """An empty YAML file loads as None; callers expect a dict, so it must not leak through."""
+    path = tmp_path / filename
+    path.write_text(content)
+
+    with mock.patch.object(logger, "warning") as warning:
+        assert load_config_file(str(path)) == {}
+
+    warning.assert_called_once()
+    assert filename in warning.call_args.args[0]

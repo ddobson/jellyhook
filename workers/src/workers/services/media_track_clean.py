@@ -21,8 +21,8 @@ class MediaTrackCleanService(ServiceBase):
         movie: Movie,
         keep_original: bool = True,
         keep_default: bool = True,
-        keep_audio_langs: list[str] = None,
-        keep_sub_langs: list[str] = None,
+        keep_audio_langs: list[str] | None = None,
+        keep_sub_langs: list[str] | None = None,
         temp_dir: str = TEMP_DIR,
     ) -> None:
         """Initialize the media track clean service.

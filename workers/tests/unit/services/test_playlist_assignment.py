@@ -1,6 +1,7 @@
 """Tests for the playlist assignment service module."""
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -98,12 +99,12 @@ def test_exec_with_no_rules_skips_playlist_calls() -> None:
 
     service.exec()
 
-    service._client.http.request.assert_not_called()  # type: ignore[attr-defined]
+    service._client.http.request.assert_not_called()
 
 
 def test_exec_ignores_non_mapping_rules() -> None:
     http = SimpleNamespace(request=Mock())
-    service = _build_service(rules=["invalid"], http=http)
+    service = _build_service(rules=["invalid"], http=http)  # type: ignore[list-item]
 
     service.exec()
 
@@ -176,7 +177,7 @@ def test_load_item_details_fetches_missing_metadata() -> None:
     }
     get_item = Mock(return_value=fetched_details)
     api = SimpleNamespace(get_item=get_item)
-    message = {
+    message: dict[str, Any] = {
         "ItemId": "item123",
         "RunTimeTicks": None,
         "Genres": [],
@@ -251,7 +252,7 @@ def test_load_item_details_merges_embedded_payload() -> None:
         "Tags": ["laugh"],
         "ProductionYear": 2018,
     }
-    message = {
+    message: dict[str, Any] = {
         "Item": embedded,
         "RunTimeTicks": None,
         "Genres": [],
@@ -270,7 +271,7 @@ def test_load_item_details_merges_embedded_payload() -> None:
 
 def test_enrich_item_details_skips_when_get_item_missing() -> None:
     api = SimpleNamespace()  # no get_item attribute
-    message = {
+    message: dict[str, Any] = {
         "RunTimeTicks": None,
         "Genres": [],
         "Tags": [],
@@ -288,7 +289,24 @@ def test_enrich_item_details_skips_when_get_item_missing() -> None:
 def test_enrich_item_details_handles_fetch_failure() -> None:
     get_item = Mock(side_effect=RuntimeError("boom"))
     api = SimpleNamespace(get_item=get_item)
-    message = {
+    message: dict[str, Any] = {
+        "RunTimeTicks": None,
+        "Genres": [],
+        "Tags": [],
+        "ProductionYear": None,
+    }
+    service = _build_service(message=message, api=api)
+
+    details = service._load_item_details()
+
+    assert details["RunTimeTicks"] is None
+    assert get_item.call_count == 1
+
+
+def test_enrich_item_details_ignores_a_non_mapping_response() -> None:
+    get_item = Mock(return_value=["not", "a", "mapping"])
+    api = SimpleNamespace(get_item=get_item)
+    message: dict[str, Any] = {
         "RunTimeTicks": None,
         "Genres": [],
         "Tags": [],
@@ -312,7 +330,7 @@ def test_rule_matches_requires_mapping_conditions() -> None:
 
 def test_rule_matches_returns_false_when_release_year_missing() -> None:
     api = SimpleNamespace()
-    message = {
+    message: dict[str, Any] = {
         "ProductionYear": None,
         "PremiereDate": None,
         "DateCreated": None,

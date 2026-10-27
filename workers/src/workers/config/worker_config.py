@@ -5,6 +5,7 @@ from typing import Any
 import yaml
 
 from workers import utils
+from workers.logger import logger
 from workers.parsers import MovieNamingScheme
 
 
@@ -14,9 +15,9 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
     This class is user-driven via a configuration file.
     """
 
-    config = {}
+    config: dict[str, Any] = {}
 
-    def get_enabled_webhooks(self) -> dict:
+    def get_enabled_webhooks(self) -> dict[str, dict[str, Any]]:
         """Get a list of enabled webhooks.
 
         Returns:
@@ -60,7 +61,8 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
         Returns:
             The webhook configuration, or an empty dict if not found.
         """
-        return self.config.get("webhooks", {}).get(webhook_id, {})
+        webhook_config: dict[str, Any] = self.config.get("webhooks", {}).get(webhook_id, {})
+        return webhook_config
 
     def get_service_config(self, webhook_id: str, service_name: str) -> dict[str, Any]:
         """Get configuration for a specific service within a webhook.
@@ -77,7 +79,8 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
 
         for service in services:
             if service.get("name") == service_name:
-                return service.get("config", {})
+                service_config: dict[str, Any] = service.get("config", {})
+                return service_config
 
         return {}
 
@@ -87,7 +90,8 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
         Returns:
             The general configuration.
         """
-        return self.config.get("general", {})
+        general_config: dict[str, Any] = self.config.get("general", {})
+        return general_config
 
     def get_naming_scheme(self, item_type: str) -> MovieNamingScheme:
         """Get the naming configuration for the worker.
@@ -100,7 +104,8 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
         """
         general_config = self.get_general_config()
         schemes = general_config.get("naming_schemes", {})
-        return schemes.get(item_type, "fallback")
+        scheme: MovieNamingScheme = schemes.get(item_type, "fallback")
+        return scheme
 
     def _set_worker_config(self, config: dict[str, Any]) -> None:
         """Set the worker configuration."""
@@ -116,16 +121,17 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
         return worker
 
 
-def load_config_file(filename: str) -> dict:
+def load_config_file(filename: str) -> dict[str, Any]:
     """Load a JSON or YAML configuration file.
 
     Args:
         filename (str): The path to the configuration file.
 
     Returns:
-        dict: The loaded configuration data.
+        The loaded configuration data; empty if the file is missing, unreadable, invalid or
+        does not hold a mapping at the top level.
     """
-    default = {}
+    default: dict[str, Any] = {}
 
     try:
         config_path = pathlib.Path(filename)
@@ -134,7 +140,14 @@ def load_config_file(filename: str) -> dict:
 
         with open(config_path, "r") as f:
             if config_path.suffix.lower() in [".yml", ".yaml"]:
-                return yaml.safe_load(f)
-            return json.load(f)
+                loaded = yaml.safe_load(f)
+            else:
+                loaded = json.load(f)
+        if isinstance(loaded, dict):
+            return loaded
+        # An empty YAML file loads as None, and a list or scalar is no use as a config. Say so:
+        # an empty config means no webhook runs any service, which looks like normal operation.
+        logger.warning(f"Ignoring {filename}: expected a mapping at the top level")
+        return default
     except (json.JSONDecodeError, yaml.YAMLError, IOError):
         return default

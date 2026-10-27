@@ -1,6 +1,6 @@
 name: Code Quality
 
-# Validate API and worker projects with linting, unit tests, and coverage reporting.
+# Validate API and worker projects with linting, type checking, unit tests, and coverage reporting.
 
 on:
   push:
@@ -71,6 +71,40 @@ jobs:
           uv run --active ruff check --select I --config ../ruff.toml .
           uv run --active ruff format --check --config ../ruff.toml .
 
+  typecheck_api:
+    needs: setup
+    name: Typecheck API
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          cache-suffix: ${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Run API type checking
+        working-directory: ./api
+        run: uv run --active mypy --config-file ../mypy.ini .
+
+  typecheck_workers:
+    needs: setup
+    name: Typecheck Workers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          cache-suffix: ${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Run Workers type checking
+        working-directory: ./workers
+        run: uv run --active mypy --config-file ../mypy.ini .
+
   test_api:
     needs: setup
     name: Test API Unit
@@ -93,7 +127,7 @@ jobs:
             --cov-report=xml \
             tests
 
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true
           files: ./api/coverage.xml
@@ -122,7 +156,7 @@ jobs:
             --cov-report=xml \
             tests/unit
 
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true
           files: ./workers/coverage.xml
@@ -194,7 +228,7 @@ jobs:
           docker rm test-runner
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true
           files: coverage.xml

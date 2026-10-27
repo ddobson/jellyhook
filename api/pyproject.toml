@@ -20,7 +20,7 @@ dependencies = [
 dev = [
     "debugpy<2.0.0,>=1.8.12",
     "ipython<9.0.0,>=8.31.0",
-    "mypy<2.0.0,>=1.15.0",
+    "mypy>=2.4.0,<3.0.0",
     "pytest<9.0.0,>=8.3.4",
     "pytest-cov>=6.1.1",
     "ruff<1.0.0,>=0.9.9",
@@ -35,3 +35,7 @@ markers = ["integration: needs Docker; runs against a real RabbitMQ (not part of
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/api"]
+
+[tool.coverage.report]
+# Imports used only by the type checker never run
+exclude_also = ["if TYPE_CHECKING:"]

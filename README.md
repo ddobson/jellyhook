@@ -75,7 +75,7 @@ make lint
 make format
 
 # Type checking
-make typecheck  # Project is not yet type compliant
+make typecheck  # mypy on api and workers; fails on any error
 
 # Run tests
 make test

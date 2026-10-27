@@ -25,6 +25,15 @@ def test_timer_decorator_calculates_elapsed_time(mock_time):
     assert mock_time.call_count == 2
 
 
+def test_timer_decorator_keeps_the_function_metadata():
+    @utils.timer
+    def documented() -> None:
+        """A docstring."""
+
+    assert documented.__name__ == "documented"
+    assert documented.__doc__ == "A docstring."
+
+
 @mock.patch("time.time")
 def test_timer_decorator_with_args(mock_time):
     mock_time.side_effect = [100.0, 107.0]  # Start and end times
@@ -40,7 +49,7 @@ def test_timer_decorator_with_args(mock_time):
     mock_logger.assert_called_once_with("test_func took 7.0 seconds")
 
 
-def _script(tmp_path, body: str) -> pathlib.Path:
+def _script(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
     """Write an executable shell script and return its path."""
     script = tmp_path / "script.sh"
     script.write_text(f"#!/bin/bash\n{body}\n")

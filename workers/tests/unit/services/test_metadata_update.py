@@ -1,3 +1,4 @@
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -27,7 +28,7 @@ def test_metadata_update_service_init_from_message(
     mock_from_file.return_value = mock_movie
 
     # Create service config
-    service_config = {"paths": [], "patterns": []}
+    service_config: dict[str, Any] = {"paths": [], "patterns": []}
 
     # Execute
     service = MetadataUpdateService.from_message(mock_message_standup, service_config)
@@ -136,7 +137,7 @@ def test_find_matching_rules_pattern_no_match(mock_movie_standup):
 def test_calculate_new_genres_replace():
     # Setup
     service = MetadataUpdateService(
-        movie=None,
+        movie=mock.Mock(),
         item_id="123456",
         original_genres=["Comedy", "Documentary"],
     )
@@ -152,7 +153,7 @@ def test_calculate_new_genres_replace():
 def test_calculate_new_genres_add():
     # Setup
     service = MetadataUpdateService(
-        movie=None,
+        movie=mock.Mock(),
         item_id="123456",
         original_genres=["Comedy", "Documentary"],
     )
@@ -168,7 +169,7 @@ def test_calculate_new_genres_add():
 def test_calculate_new_genres_add_no_duplicates():
     # Setup
     service = MetadataUpdateService(
-        movie=None,
+        movie=mock.Mock(),
         item_id="123456",
         original_genres=["Comedy", "Documentary"],
     )
@@ -185,7 +186,7 @@ def test_calculate_new_genres_add_no_duplicates():
 
 def test_calculate_new_genres_multiple_rules():
     # Setup
-    service = MetadataUpdateService(movie=None, item_id="123456", original_genres=["Comedy"])
+    service = MetadataUpdateService(movie=mock.Mock(), item_id="123456", original_genres=["Comedy"])
     service.matching_rules = [
         {"genres": {"new_genres": ["Stand-Up"], "replace_existing": False}},
         {"genres": {"new_genres": ["Live Performance"], "replace_existing": False}},
@@ -201,7 +202,7 @@ def test_calculate_new_genres_multiple_rules():
 def test_calculate_new_genres_replace_then_add():
     # Setup
     service = MetadataUpdateService(
-        movie=None,
+        movie=mock.Mock(),
         item_id="123456",
         original_genres=["Comedy", "Documentary"],
     )
@@ -220,7 +221,7 @@ def test_calculate_new_genres_replace_then_add():
 def test_calculate_new_tags_replace():
     # Setup
     service = MetadataUpdateService(
-        movie=None,
+        movie=mock.Mock(),
         item_id="123456",
         original_tags=["Netflix", "Special"],
     )
@@ -236,7 +237,7 @@ def test_calculate_new_tags_replace():
 def test_calculate_new_tags_add():
     # Setup
     service = MetadataUpdateService(
-        movie=None,
+        movie=mock.Mock(),
         item_id="123456",
         original_tags=["Netflix", "Special"],
     )

@@ -25,7 +25,7 @@ class PlaylistAssignmentService(ServiceBase):
         item_id: str,
         message: dict[str, Any],
         rules: list[dict[str, Any]],
-        jellyfin_client=None,
+        jellyfin_client: Any = None,
     ) -> None:
         """Initialize the playlist assignment service with webhook data and rules."""
         self.item_id = item_id
@@ -52,7 +52,7 @@ class PlaylistAssignmentService(ServiceBase):
 
         for rule in self.rules:
             if not isinstance(rule, dict):
-                logger.warning("Ignoring playlist rule because it is not a mapping: %s", rule)
+                logger.warning("Ignoring playlist rule because it is not a mapping: {}", rule)
                 continue
 
             if self._rule_matches(rule, item_details, runtime_minutes):
@@ -60,9 +60,9 @@ class PlaylistAssignmentService(ServiceBase):
                 matches += 1
 
         if matches == 0:
-            logger.info("No playlist rules matched for item %s", self.item_id)
+            logger.info("No playlist rules matched for item {}", self.item_id)
         else:
-            logger.info("Applied %s playlist rule(s) for item %s", matches, self.item_id)
+            logger.info("Applied {} playlist rule(s) for item {}", matches, self.item_id)
 
     @classmethod
     def from_message(
@@ -114,11 +114,11 @@ class PlaylistAssignmentService(ServiceBase):
             fetched = fetch_fn(self.item_id)
         except Exception as exc:
             logger.error(
-                "Failed to load Jellyfin item %s for playlist rules: %s", self.item_id, exc
+                "Failed to load Jellyfin item {} for playlist rules: {}", self.item_id, exc
             )
             return
 
-        if isinstance(fetched, dict):
+        if isinstance(fetched, dict) and self._item_details is not None:
             self._item_details.update(fetched)
 
     def _rule_matches(
@@ -130,7 +130,7 @@ class PlaylistAssignmentService(ServiceBase):
         """Return True if the rule's conditions match the provided item metadata."""
         conditions = rule.get("conditions", {})
         if not isinstance(conditions, dict):
-            logger.warning("Playlist rule missing conditions mapping: %s", rule)
+            logger.warning("Playlist rule missing conditions mapping: {}", rule)
             return False
 
         item_type = item_details.get("ItemType") or item_details.get("Type")
@@ -176,7 +176,7 @@ class PlaylistAssignmentService(ServiceBase):
 
         if runtime_minutes is None:
             logger.warning(
-                "Unable to evaluate runtime-based playlist rule for item %s because runtime is missing",  # noqa: E501
+                "Unable to evaluate runtime-based playlist rule for item {} because runtime is missing",  # noqa: E501
                 self.item_id,
             )
             return False
@@ -199,7 +199,7 @@ class PlaylistAssignmentService(ServiceBase):
 
         if release_year is None:
             logger.warning(
-                "Unable to evaluate release year rule for item %s because year is missing",
+                "Unable to evaluate release year rule for item {} because year is missing",
                 self.item_id,
             )
             return False
@@ -216,7 +216,7 @@ class PlaylistAssignmentService(ServiceBase):
         """Add the current item to the playlist referenced by the rule."""
         playlist_id = rule.get("playlist_id")
         if not playlist_id:
-            logger.warning("Playlist rule does not specify playlist_id: %s", rule)
+            logger.warning("Playlist rule does not specify playlist_id: {}", rule)
             return
 
         try:
@@ -235,7 +235,7 @@ class PlaylistAssignmentService(ServiceBase):
             ) from exc
         else:
             playlist_name = rule.get("playlist_name", playlist_id)
-            logger.info("Added item %s to playlist '%s'", self.item_id, playlist_name)
+            logger.info("Added item {} to playlist '{}'", self.item_id, playlist_name)
 
     def _post_playlist_items(self, playlist_id: str) -> None:
         """Add the item to a playlist using the Jellyfin HTTP API."""
@@ -332,15 +332,15 @@ class PlaylistAssignmentService(ServiceBase):
         if isinstance(value, str):
             items = [value]
         elif isinstance(value, Iterable):
-            items = value
+            items = list(value)
         else:
             items = [value]
         normalized = {str(item).strip().lower() for item in items if str(item).strip()}
         return normalized
 
-    def _get_user_id(self) -> str:
+    def _get_user_id(self) -> str | None:
         """Retrieve the user ID from the Jellyfin client configuration."""
-        user_id = self._client.config.data.get("auth.user_id")
+        user_id: str | None = self._client.config.data.get("auth.user_id")
         if not user_id:
             logger.error(
                 "User ID is not configured or available in the Jellyfin client configuration."
