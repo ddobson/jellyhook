@@ -425,3 +425,60 @@ def test_run_stays_quiet_when_the_dead_letter_queue_is_empty(
         consumer.run(shutdown_grace=1)
 
     logger.warning.assert_not_called()
+
+
+def test_close_without_a_connection_is_a_no_op(make_consumer, connection):
+    consumer = make_consumer()
+    consumer._connection = None
+
+    consumer._close()
+
+    connection.close.assert_not_called()
+
+
+def test_close_leaves_an_already_closed_connection_alone(make_consumer, connection):
+    connection.is_open = False
+    consumer = make_consumer()
+
+    consumer._close()
+
+    connection.close.assert_not_called()
+    assert consumer._connection is None
+
+
+def test_job_keeps_waiting_for_a_slot_until_one_frees_up(make_consumer, channel):
+    """The slot wait polls once a second so it can notice a shutdown; it must not give up early."""
+    slots = mock.MagicMock()
+    slots.acquire.side_effect = [False, False, True]
+    handler = mock.MagicMock(return_value=ProcessingResult.success())
+    consumer = make_consumer(handler, job_slots=slots)
+
+    deliver(consumer, channel)
+
+    assert slots.acquire.call_count == 3
+    handler.assert_called_once()
+    slots.release.assert_called_once()
+    channel.basic_ack.assert_called_once()
+
+
+def test_job_finishing_after_the_consumer_closed_is_left_for_redelivery(make_consumer, channel):
+    """If the connection is already gone there is nothing to settle on."""
+    consumer = make_consumer()
+    consumer._connection = None
+
+    with mock.patch.object(rabbitmq, "logger") as logger:
+        deliver(consumer, channel)
+
+    channel.basic_ack.assert_not_called()
+    assert "redeliver" in logger.error.call_args.args[0]
+
+
+def test_republish_without_a_reason_omits_the_reason_header(make_consumer, channel):
+    handler = mock.MagicMock(return_value=ProcessingResult.retry(""))
+    consumer = make_consumer(handler)
+
+    deliver(consumer, channel)
+
+    [(_, properties)] = published(channel)
+    assert topology.FAILURE_REASON_HEADER not in properties.headers
+    assert properties.headers[topology.ATTEMPTS_HEADER] == 1

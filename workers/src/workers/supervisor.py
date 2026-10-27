@@ -4,6 +4,9 @@ from typing import Protocol
 
 from workers.logger import logger
 
+# Slack on top of the shutdown grace, for a consumer to tear down its connection
+JOIN_MARGIN_SECONDS = 10
+
 
 class Consumer(Protocol):
     """Something the supervisor can run in a thread until told to stop."""
@@ -65,9 +68,9 @@ def supervise(
     stop_event.wait()
     logger.info("Shutdown requested; waiting for consumers to drain")
 
-    # Each consumer drains for at most `shutdown_grace`; the extra covers connection teardown
+    # Each consumer drains for at most `shutdown_grace`; the margin covers connection teardown
     for thread in threads:
-        thread.join(timeout=shutdown_grace + 10)
+        thread.join(timeout=shutdown_grace + JOIN_MARGIN_SECONDS)
         if thread.is_alive():
             logger.warning(f"Thread {thread.name} did not stop in time; exiting anyway")
 

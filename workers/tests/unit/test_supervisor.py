@@ -1,6 +1,8 @@
 import threading
 from types import SimpleNamespace
+from unittest import mock
 
+from workers import supervisor
 from workers.supervisor import supervise
 
 
@@ -61,3 +63,21 @@ def test_stop_requested_from_outside_wakes_the_supervisor():
     threading.Thread(target=lambda: stop.set()).start()
 
     assert supervise([consumer], stop, shutdown_grace=1) == 0
+
+
+def test_a_consumer_that_will_not_stop_is_abandoned_with_a_warning():
+    """A wedged consumer must not keep the process alive past the grace period."""
+    stop = threading.Event()
+    release = threading.Event()
+    stuck = make_consumer("stuck", lambda grace: release.wait(timeout=5))
+    threading.Timer(0.05, stop.set).start()
+
+    with (
+        mock.patch.object(supervisor, "JOIN_MARGIN_SECONDS", 0),
+        mock.patch.object(supervisor, "logger") as logger,
+    ):
+        code = supervise([stuck], stop, shutdown_grace=0.05)
+
+    release.set()  # let the stand-in thread finish
+    assert code == 0
+    assert "did not stop in time" in logger.warning.call_args.args[0]

@@ -650,3 +650,15 @@ def test_process_webhook_does_not_retry_a_playlist_service_that_got_a_401(orches
         result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
 
     assert result.outcome is Outcome.FAILED
+
+
+def test_process_webhook_does_not_track_a_temp_dir_for_services_without_one(orchestrator):
+    """Services like metadata_update have no tmp_dir, so there is nothing to clean up."""
+    _enable_services(orchestrator, ["metadata_update"])
+    service = mock.MagicMock(spec=ServiceBase)  # spec'd, so `tmp_dir` does not exist
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result == ProcessingResult.success()
+    assert orchestrator.temp_dirs == set()

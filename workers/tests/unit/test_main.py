@@ -1,6 +1,9 @@
 import os
+import runpy
 import signal
+import sys
 import threading
+import types
 from unittest import mock
 
 import pytest
@@ -90,3 +93,42 @@ def test_signal_handlers_request_a_graceful_stop(signum):
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
+
+
+@pytest.fixture
+def entrypoint(worker_config):
+    """Patch everything `python -m workers.main` touches, so running it has no side effects."""
+    with (
+        mock.patch.object(worker_main.config.WorkerConfig, "load", return_value=worker_config),
+        mock.patch("workers.supervisor.supervise", return_value=3) as supervise,
+        mock.patch("workers.clients.rabbitmq.QueueConsumer"),
+        mock.patch("signal.signal"),  # don't replace pytest's signal handlers
+    ):
+        yield supervise
+
+
+@pytest.mark.filterwarnings("ignore:.*found in sys.modules:RuntimeWarning")
+def test_running_the_module_exits_with_the_supervisors_code(entrypoint):
+    """`python -m workers.main` must turn a failed consumer into a non-zero exit status."""
+    with (
+        mock.patch.object(worker_main.config, "DEBUG", False),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        runpy.run_module("workers.main", run_name="__main__")
+
+    assert exit_info.value.code == 3
+    entrypoint.assert_called_once()
+
+
+@pytest.mark.filterwarnings("ignore:.*found in sys.modules:RuntimeWarning")
+def test_running_the_module_in_debug_mode_opens_the_debugger_port(entrypoint):
+    fake_debugpy = types.SimpleNamespace(listen=mock.MagicMock())
+
+    with (
+        mock.patch.object(worker_main.config, "DEBUG", True),
+        mock.patch.dict(sys.modules, {"debugpy": fake_debugpy}),
+        pytest.raises(SystemExit),
+    ):
+        runpy.run_module("workers.main", run_name="__main__")
+
+    fake_debugpy.listen.assert_called_once_with(("0.0.0.0", 5678))
