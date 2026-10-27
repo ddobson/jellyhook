@@ -127,7 +127,7 @@ jobs:
             --cov-report=xml \
             tests
 
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true
           files: ./api/coverage.xml
@@ -156,7 +156,7 @@ jobs:
             --cov-report=xml \
             tests/unit
 
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true
           files: ./workers/coverage.xml
@@ -228,7 +228,7 @@ jobs:
           docker rm test-runner
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true
           files: coverage.xml
