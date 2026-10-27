@@ -43,6 +43,49 @@ workers/
 3. Service orchestrator loads appropriate services based on user configuration
 4. Services execute in priority order to process the media
 
+## Message Handling
+
+Each enabled webhook's queue is consumed on its own RabbitMQ connection. A message is only
+acknowledged once it has been handled, so a crash or lost connection means the broker redelivers
+it (at-least-once delivery).
+
+When processing fails, the worker decides what to do based on the kind of failure:
+
+| Failure | Examples | What happens |
+|---|---|---|
+| Transient | Video not on disk yet, Jellyfin unreachable or timing out | Parked on `<queue>.retry`, returns to `<queue>` after 60 seconds, up to `WORKER_MAX_ATTEMPTS` tries |
+| Permanent | Unknown or unloadable service, invalid message body, any other error | Moved straight to `<queue>.dead` |
+| Retries exhausted | A transient failure that keeps happening | Moved to `<queue>.dead` |
+
+Nothing is discarded. Messages on `<queue>.dead` carry `x-jellyhook-failure-reason` and
+`x-jellyhook-attempts` headers; inspect them in the RabbitMQ management UI (port 15672). To replay
+one, move it back onto `<queue>`: enable the `rabbitmq_shovel` and `rabbitmq_shovel_management`
+plugins, which add a "Move messages" tab to each queue's page in the management UI. Because
+redelivery can run a job twice, services should be safe to repeat.
+
+If the RabbitMQ connection drops or a consumer fails, the worker exits non-zero instead of
+carrying on with nothing consuming. Run it under a restart policy (`restart: unless-stopped` in
+`docker-compose.yaml`) so it comes back with a fresh connection.
+
+On `SIGTERM` (`docker stop`) the worker stops taking new messages and gives in-flight jobs
+`WORKER_SHUTDOWN_GRACE_SECONDS` to finish. A job still running after that is abandoned and its
+message is redelivered. Set the container's `stop_grace_period` to at least that value plus 15
+seconds (Docker's default of 10 would kill the worker mid-drain).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `WORKER_MAX_ATTEMPTS` | `5` | Tries (first one included) before a transient failure is dead-lettered |
+| `WORKER_MAX_CONCURRENT_JOBS` | `1` | Jobs running at once across all queues. Earlier versions ran one per webhook, so with several webhooks raise this to match. Only do so if the host can take several concurrent ffmpeg/mkvmerge/dovi_tool runs |
+| `WORKER_SHUTDOWN_GRACE_SECONDS` | `45` | How long in-flight jobs may finish after `SIGTERM` |
+| `RABBITMQ_HEARTBEAT` | `60` | AMQP heartbeat interval in seconds |
+
+For a walkthrough with worked examples, and a checklist for deploying outside Docker Compose
+(restart policy, stop timeout, broker `consumer_timeout`, restricted-user permissions), see
+[How the Worker Consumes Messages](../docs/message-consumption.md).
+
+The retry delay (60 seconds) is part of the `<queue>.retry` declaration. To change it, delete
+that queue first or RabbitMQ rejects the redeclare.
+
 ## Technology Stack
 
 - Python 3.13+

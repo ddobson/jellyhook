@@ -7,8 +7,11 @@ from unittest import mock
 import pytest
 
 from workers.config import WorkerConfig
+from workers.errors import MediaNotFoundError, ServiceConfigurationError
+from workers.results import Outcome, ProcessingResult
 from workers.services.dovi_conversion import DoviConversionService
 from workers.services.orchestrator import ServiceOrchestrator, process_webhook_message
+from workers.services.playlist_assignment import PlaylistAssignmentError
 from workers.services.service_base import ServiceBase
 
 
@@ -180,13 +183,9 @@ def test_create_service_instance_unknown_service():
         service_config = {"temp_dir": "/tmp/test"}
 
         with mock.patch("workers.services.orchestrator.logger") as mock_logger:
-            # Call the real method with an unknown service
-            service = orchestrator.create_service_instance(
-                "unknown_service", message, service_config
-            )
-
-            # The service should not be created
-            assert service is None
+            # An unknown service is a configuration error, not a skip
+            with pytest.raises(ServiceConfigurationError, match="Unknown service"):
+                orchestrator.create_service_instance("unknown_service", message, service_config)
 
             # Logger.error should be called
             mock_logger.error.assert_called_once_with("Unknown service: unknown_service")
@@ -223,7 +222,7 @@ def test_process_webhook_disabled_webhook(orchestrator):
         result = orchestrator.process_webhook(message)
 
         # The webhook should be skipped, but return success
-        assert result is True
+        assert result == ProcessingResult.success()
 
         # Logger.info should be called
         mock_logger.info.assert_called_once_with(
@@ -243,7 +242,7 @@ def test_process_webhook_no_enabled_services(orchestrator):
         result = orchestrator.process_webhook(message)
 
         # No services to run, but return success
-        assert result is True
+        assert result == ProcessingResult.success()
 
         # Logger.info should be called
         mock_logger.info.assert_called_once_with(
@@ -282,7 +281,7 @@ def test_process_webhook_success(orchestrator, mock_service):
         result = orchestrator.process_webhook(message)
 
         # All services ran successfully
-        assert result is True
+        assert result == ProcessingResult.success()
 
         # Each service was executed
         assert mock_service["instance"].exec.call_count == 2
@@ -318,7 +317,7 @@ def test_process_webhook_service_creation_error(orchestrator):
         result = orchestrator.process_webhook(message)
 
         # Service not created, but not critical failure
-        assert result is True
+        assert result == ProcessingResult.success()
 
         # Info log about service not being created
         mock_logger.info.assert_any_call(
@@ -374,7 +373,9 @@ def test_process_webhook_service_execution_error(orchestrator):
         result = orchestrator.process_webhook(message)
 
         # Metadata errors are not critical, but dovi errors are
-        assert result is False
+        assert result.outcome is Outcome.FAILED
+        assert "dovi_conversion: Exception: Dovi service failed" in result.reason
+        assert "metadata_update" not in result.reason
 
         # Both services attempted execution
         metadata_service.exec.assert_called_once()
@@ -432,7 +433,7 @@ def test_process_webhook_message_success():
 
     # Mock ServiceOrchestrator
     mock_orchestrator = mock.MagicMock()
-    mock_orchestrator.process_webhook.return_value = True
+    mock_orchestrator.process_webhook.return_value = ProcessingResult.success()
 
     with (
         mock.patch(
@@ -446,7 +447,7 @@ def test_process_webhook_message_success():
         result = process_webhook_message(webhook_id, message_body)
 
         # The message was processed successfully
-        assert result is True
+        assert result == ProcessingResult.success()
 
         # The orchestrator was created with the correct webhook_id
         assert mock_orchestrator.process_webhook.called
@@ -468,9 +469,196 @@ def test_process_webhook_message_error():
     ):
         result = process_webhook_message(webhook_id, message_body)
 
-        # The message was not processed successfully
-        assert result is False
+        # Malformed JSON can never succeed, so it is a permanent failure
+        assert result.outcome is Outcome.FAILED
+        assert "Invalid JSON" in result.reason
 
         # Logger error was called
         mock_logger.error.assert_called_once()
-        assert "Failed to process webhook item_added" in mock_logger.error.call_args[0][0]
+        assert "Invalid JSON in message for webhook item_added" in mock_logger.error.call_args[0][0]
+
+
+def _enable_services(orchestrator, names):
+    """Configure the orchestrator with enabled services in priority order."""
+    orchestrator.worker_config.get_enabled_webhooks.return_value = {"item_added": {"enabled": True}}
+    orchestrator.worker_config.get_enabled_services.return_value = [
+        {"name": name, "enabled": True, "priority": (i + 1) * 10} for i, name in enumerate(names)
+    ]
+
+
+def _failing_service(error):
+    """Create a mock service whose exec raises the given error."""
+    service = mock.MagicMock(spec=ServiceBase)
+    service.exec.side_effect = error
+    return service
+
+
+def test_create_service_instance_import_failure_raises():
+    """A service module that fails to import is a configuration error, not a skip."""
+    with mock.patch.object(WorkerConfig, "__init__", return_value=None):
+        orchestrator = ServiceOrchestrator("item_added")
+
+    with (
+        mock.patch(
+            "workers.services.orchestrator.importlib.import_module",
+            side_effect=ImportError("no module named x"),
+        ),
+        pytest.raises(ServiceConfigurationError, match="Failed to import service dovi_conversion"),
+    ):
+        orchestrator.create_service_instance("dovi_conversion", {}, {})
+
+
+def test_create_service_instance_does_not_hide_service_bugs():
+    """An AttributeError raised inside from_message is a bug and must not look like a skip."""
+    with mock.patch.object(WorkerConfig, "__init__", return_value=None):
+        orchestrator = ServiceOrchestrator("item_added")
+
+    broken_service = mock.Mock()
+    broken_service.from_message.side_effect = AttributeError("'NoneType' has no attribute 'x'")
+    module = mock.Mock(DoviConversionService=broken_service)
+
+    with (
+        mock.patch("workers.services.orchestrator.importlib.import_module", return_value=module),
+        pytest.raises(AttributeError),
+    ):
+        orchestrator.create_service_instance("dovi_conversion", {}, {})
+
+
+def test_process_webhook_unknown_service_fails_instead_of_acking(orchestrator):
+    """A mistyped service name must fail the message, not be acknowledged as a skip."""
+    _enable_services(orchestrator, ["metadat_update"])
+
+    result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.FAILED
+    assert "Unknown service: metadat_update" in result.reason
+
+
+def test_process_webhook_missing_media_is_retryable(orchestrator):
+    """A file that hasn't landed on disk yet should be retried, not dropped."""
+    _enable_services(orchestrator, ["dovi_conversion"])
+    service_error = MediaNotFoundError("No video found for 'Test Movie'")
+
+    with mock.patch.object(
+        ServiceOrchestrator, "create_service_instance", side_effect=service_error
+    ):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.RETRY
+    assert "No video found" in result.reason
+
+
+def test_process_webhook_network_error_is_retryable(orchestrator):
+    """Jellyfin being unreachable is transient."""
+    _enable_services(orchestrator, ["playlist_assignment"])
+    service = _failing_service(ConnectionError("Jellyfin unreachable"))
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.RETRY
+
+
+def test_process_webhook_mixed_failures_retry(orchestrator):
+    """If any failure is transient the message is retried; the permanent one fails again."""
+    _enable_services(orchestrator, ["dovi_conversion", "media_track_clean"])
+    services = {
+        "dovi_conversion": _failing_service(ValueError("bad profile")),
+        "media_track_clean": _failing_service(TimeoutError("jellyfin timed out")),
+    }
+
+    with mock.patch.object(
+        ServiceOrchestrator,
+        "create_service_instance",
+        side_effect=lambda name, *_: services[name],
+    ):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.RETRY
+    assert "dovi_conversion: ValueError: bad profile" in result.reason
+    assert "media_track_clean: TimeoutError" in result.reason
+
+
+def test_process_webhook_metadata_failure_alone_still_succeeds(orchestrator):
+    """Existing behavior: metadata_update failures never fail the message."""
+    _enable_services(orchestrator, ["metadata_update"])
+    service = _failing_service(ConnectionError("Jellyfin unreachable"))
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result == ProcessingResult.success()
+
+
+def test_process_webhook_message_rejects_non_object_body():
+    """A body like `null` or `[]` parses as JSON but can never be processed."""
+    result = process_webhook_message("item_added", b"null")
+
+    assert result.outcome is Outcome.FAILED
+    assert "Expected a JSON object" in result.reason
+
+
+def test_process_webhook_message_unexpected_error_is_classified():
+    """An unexpected crash is permanent unless it looks transient."""
+    with mock.patch(
+        "workers.services.orchestrator.ServiceOrchestrator", side_effect=KeyError("config")
+    ):
+        crashed = process_webhook_message("item_added", b"{}")
+    with mock.patch(
+        "workers.services.orchestrator.ServiceOrchestrator", side_effect=TimeoutError("slow")
+    ):
+        timed_out = process_webhook_message("item_added", b"{}")
+
+    assert crashed.outcome is Outcome.FAILED
+    assert timed_out.outcome is Outcome.RETRY
+
+
+def _wrapped_playlist_error(cause):
+    """Raise-and-catch to chain the error the way playlist_assignment does (`from exc`)."""
+    try:
+        try:
+            raise cause
+        except Exception as exc:
+            raise PlaylistAssignmentError("Failed to add item to playlist") from exc
+    except PlaylistAssignmentError as error:
+        return error
+
+
+def test_process_webhook_retries_a_playlist_service_that_wrapped_a_jellyfin_outage(orchestrator):
+    """The service re-raises Jellyfin failures as its own type; that must not hide the cause."""
+    import requests
+
+    _enable_services(orchestrator, ["playlist_assignment"])
+    service = _failing_service(_wrapped_playlist_error(requests.ConnectionError("refused")))
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.RETRY
+
+
+def test_process_webhook_does_not_retry_a_playlist_service_that_got_a_401(orchestrator):
+    """A rejected API key will not fix itself in four minutes."""
+    import requests
+
+    response = requests.Response()
+    response.status_code = 401
+    _enable_services(orchestrator, ["playlist_assignment"])
+    service = _failing_service(_wrapped_playlist_error(requests.HTTPError(response=response)))
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.FAILED
+
+
+def test_process_webhook_does_not_track_a_temp_dir_for_services_without_one(orchestrator):
+    """Services like metadata_update have no tmp_dir, so there is nothing to clean up."""
+    _enable_services(orchestrator, ["metadata_update"])
+    service = mock.MagicMock(spec=ServiceBase)  # spec'd, so `tmp_dir` does not exist
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result == ProcessingResult.success()
+    assert orchestrator.temp_dirs == set()

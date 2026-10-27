@@ -1,83 +1,134 @@
+import os
+import runpy
+import signal
+import sys
+import threading
+import types
 from unittest import mock
 
-import pika
+import pytest
+
+from workers import main as worker_main
+from workers.services.orchestrator import process_webhook_message
 
 
-def test_main_with_enabled_webhooks():
-    """Test the main function with enabled webhooks."""
-    mock_config = mock.MagicMock()
-    mock_config.get_enabled_webhooks.return_value = {"webhook1": {"queue": "test_queue"}}
+@pytest.fixture
+def worker_config():
+    """A loaded worker config with two enabled webhooks."""
+    config = mock.MagicMock()
+    config.get_enabled_webhooks.return_value = {
+        "item_added": {"queue": "jellyfin:item_added"},
+        "item_removed": {"queue": "jellyfin:item_removed"},
+    }
+    return config
 
-    # Mock consumer class
-    mock_consumer = mock.MagicMock()
 
+def test_main_builds_a_consumer_per_enabled_webhook_and_supervises_them(worker_config):
+    """Each webhook gets its own consumer; they share one job-slot pool and one stop event."""
     with (
-        mock.patch("workers.main.config.WorkerConfig.load", return_value=mock_config),
-        mock.patch("workers.main.rabbitmq.MessageConsumer", return_value=mock_consumer),
-        mock.patch("workers.main.logger") as mock_logger,
+        mock.patch.object(worker_main.config.WorkerConfig, "load", return_value=worker_config),
+        mock.patch.object(worker_main, "install_signal_handlers") as install,
+        mock.patch.object(worker_main.rabbitmq, "QueueConsumer") as consumer_class,
+        mock.patch.object(worker_main, "supervise", return_value=0) as supervise,
+        mock.patch.object(worker_main.config, "MAX_CONCURRENT_JOBS", 2),
+        mock.patch.object(worker_main.config, "SHUTDOWN_GRACE_SECONDS", 12.5),
     ):
-        # Import here to avoid module-level patch issues
-        from workers.main import main
+        exit_code = worker_main.main()
 
-        # Execute main function
-        main()
+    assert exit_code == 0
+    assert consumer_class.call_count == 2
+    first, second = (call.kwargs for call in consumer_class.call_args_list)
+    assert (first["webhook_id"], first["queue"]) == ("item_added", "jellyfin:item_added")
+    assert (second["webhook_id"], second["queue"]) == ("item_removed", "jellyfin:item_removed")
+    assert first["handler"] is process_webhook_message
+    assert first["job_slots"] is second["job_slots"]
+    assert first["stop_event"] is second["stop_event"]
 
-        # Verify consumer was created and started
-        mock_consumer.connect.assert_called_once()
-        mock_consumer.start.assert_called_once()
+    install.assert_called_once_with(first["stop_event"])
+    consumers, stop_event, grace = supervise.call_args.args
+    assert len(consumers) == 2
+    assert stop_event is first["stop_event"]
+    assert grace == 12.5
 
-        # Verify logs
-        assert mock_logger.info.call_count >= 1
 
-
-def test_main_no_enabled_webhooks():
-    """Test the main function with no enabled webhooks."""
-    mock_config = mock.MagicMock()
-    mock_config.get_enabled_webhooks.return_value = {}
-
+def test_main_returns_the_supervisors_failure_code(worker_config):
+    """A crashed consumer must reach the process exit code so Docker restarts the worker."""
     with (
-        mock.patch("workers.main.config.WorkerConfig.load", return_value=mock_config),
-        mock.patch("workers.main.logger") as mock_logger,
+        mock.patch.object(worker_main.config.WorkerConfig, "load", return_value=worker_config),
+        mock.patch.object(worker_main, "install_signal_handlers"),
+        mock.patch.object(worker_main.rabbitmq, "QueueConsumer"),
+        mock.patch.object(worker_main, "supervise", return_value=1),
     ):
-        # Import here to avoid module-level patch issues
-        from workers.main import main
-
-        # Execute main function
-        main()
-
-        # Verify warning was logged and function returned early
-        assert mock_logger.warning.call_count >= 1
+        assert worker_main.main() == 1
 
 
-def test_main_connection_error_retry():
-    """Test main function retries on connection error."""
-    mock_config = mock.MagicMock()
-    mock_config.get_enabled_webhooks.return_value = {"webhook1": {"queue": "test_queue"}}
-
-    # First attempt raises error, second attempt succeeds
-    mock_consumer = mock.MagicMock()
-    mock_consumer_with_error = mock.MagicMock()
-    mock_consumer_with_error.connect.side_effect = pika.exceptions.AMQPConnectionError("Test error")
-
-    mock_consumer_class = mock.MagicMock()
-    mock_consumer_class.side_effect = [mock_consumer_with_error, mock_consumer]
+def test_main_with_no_enabled_webhooks_exits_non_zero():
+    """Nothing to consume is a misconfiguration, and a silent exit 0 hid it."""
+    config = mock.MagicMock()
+    config.get_enabled_webhooks.return_value = {}
 
     with (
-        mock.patch("workers.main.config.WorkerConfig.load", return_value=mock_config),
-        mock.patch("workers.main.rabbitmq.MessageConsumer", mock_consumer_class),
-        mock.patch("workers.main.logger") as mock_logger,
-        mock.patch("time.sleep"),
-    ):  # Don't actually sleep
-        # Import here to avoid module-level patch issues
-        from workers.main import main
+        mock.patch.object(worker_main.config.WorkerConfig, "load", return_value=config),
+        mock.patch.object(worker_main, "supervise") as supervise,
+        mock.patch.object(worker_main, "logger") as logger,
+    ):
+        assert worker_main.main() == 1
 
-        # Execute main function
-        main()
+    supervise.assert_not_called()
+    assert logger.warning.call_count >= 1
 
-        # Verify error was logged and retry happened
-        assert mock_logger.error.call_count >= 1
-        assert mock_consumer_class.call_count == 2
 
-        # Verify second consumer was connected and started
-        mock_consumer.connect.assert_called_once()
-        mock_consumer.start.assert_called_once()
+@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
+def test_signal_handlers_request_a_graceful_stop(signum):
+    """Docker stop (SIGTERM) and ctrl-c (SIGINT) set the event instead of killing the process."""
+    stop_event = threading.Event()
+    previous = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        worker_main.install_signal_handlers(stop_event)
+        assert not stop_event.is_set()
+
+        os.kill(os.getpid(), signum)
+
+        assert stop_event.wait(timeout=1)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+
+
+@pytest.fixture
+def entrypoint(worker_config):
+    """Patch everything `python -m workers.main` touches, so running it has no side effects."""
+    with (
+        mock.patch.object(worker_main.config.WorkerConfig, "load", return_value=worker_config),
+        mock.patch("workers.supervisor.supervise", return_value=3) as supervise,
+        mock.patch("workers.clients.rabbitmq.QueueConsumer"),
+        mock.patch("signal.signal"),  # don't replace pytest's signal handlers
+    ):
+        yield supervise
+
+
+@pytest.mark.filterwarnings("ignore:.*found in sys.modules:RuntimeWarning")
+def test_running_the_module_exits_with_the_supervisors_code(entrypoint):
+    """`python -m workers.main` must turn a failed consumer into a non-zero exit status."""
+    with (
+        mock.patch.object(worker_main.config, "DEBUG", False),
+        pytest.raises(SystemExit) as exit_info,
+    ):
+        runpy.run_module("workers.main", run_name="__main__")
+
+    assert exit_info.value.code == 3
+    entrypoint.assert_called_once()
+
+
+@pytest.mark.filterwarnings("ignore:.*found in sys.modules:RuntimeWarning")
+def test_running_the_module_in_debug_mode_opens_the_debugger_port(entrypoint):
+    fake_debugpy = types.SimpleNamespace(listen=mock.MagicMock())
+
+    with (
+        mock.patch.object(worker_main.config, "DEBUG", True),
+        mock.patch.dict(sys.modules, {"debugpy": fake_debugpy}),
+        pytest.raises(SystemExit),
+    ):
+        runpy.run_module("workers.main", run_name="__main__")
+
+    fake_debugpy.listen.assert_called_once_with(("0.0.0.0", 5678))

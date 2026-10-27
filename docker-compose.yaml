@@ -72,10 +72,11 @@ services:
     image: jellyhook:worker-local
     restart: unless-stopped
     # Run a tiny init as PID 1 so signals reach Python and orphaned ffmpeg/mkvmerge children are
-    # reaped. The worker has no SIGTERM handler yet (Phase 2), so a stop is still abrupt.
+    # reaped.
     init: true
-    # Raise this once the worker drains in-flight jobs on SIGTERM (Phase 2).
-    stop_grace_period: 30s
+    # On SIGTERM the worker lets in-flight jobs finish for WORKER_SHUTDOWN_GRACE_SECONDS
+    # (default 45) before disconnecting. Keep this comfortably above that value.
+    stop_grace_period: 60s
     ports:
       - "5678:5678"
     volumes:

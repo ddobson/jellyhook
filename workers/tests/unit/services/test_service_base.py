@@ -4,7 +4,7 @@ from unittest import mock
 
 import pytest
 
-from workers.errors import WebhookWorkerError
+from workers.errors import MediaNotFoundError, WebhookWorkerError
 from workers.services.service_base import ServiceBase
 
 
@@ -75,7 +75,7 @@ def test_file_from_message_no_file_found(media_dir, mock_child_service):
     ):
         message = {"Name": "Non Existent Movie", "Year": "2023"}
 
-        with pytest.raises(WebhookWorkerError) as exc_info:
+        with pytest.raises(MediaNotFoundError) as exc_info:
             mock_child_service.file_from_message(message)
 
         assert "No video found for 'Non Existent Movie'" in str(exc_info.value)
