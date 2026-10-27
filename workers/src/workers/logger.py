@@ -1,11 +1,14 @@
 import os
 import sys
-from logging import Logger
+from typing import TYPE_CHECKING
 
 from loguru import logger as guru_logger
 
+if TYPE_CHECKING:
+    from loguru import Logger
 
-def get_logger() -> Logger:
+
+def get_logger() -> "Logger":
     """Return a logger instance."""
     # Remove the default logger
     guru_logger.remove()

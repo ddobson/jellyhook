@@ -19,7 +19,7 @@ class StandardMovieParser(BaseParser):
         Returns:
             dict | None: A dictionary with parsed attributes or None if not matched.
         """
-        result = {}
+        result: dict[str, str | bool] = {}
 
         # Remove file extension
         name_no_ext = re.sub(r"\.\w+$", "", filename)

@@ -22,10 +22,10 @@ PIPE_DRAIN_SECONDS = 5
 class SingletonMeta(type):
     """A thread-safe implementation of Singleton."""
 
-    _instances = {}
+    _instances: dict[type, Any] = {}
     _lock = Lock()
 
-    def __call__(cls, *args, **kwargs):
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
         """Override the __call__ method to control instance creation."""
         with cls._lock:
             if cls not in cls._instances:
@@ -34,7 +34,7 @@ class SingletonMeta(type):
         return cls._instances[cls]
 
 
-def timer(func: Callable) -> Callable:
+def timer(func: Callable[..., Any]) -> Callable[..., Any]:
     """Time the execution of a function.
 
     Args:
@@ -44,7 +44,7 @@ def timer(func: Callable) -> Callable:
         function: The wrapped function
     """
 
-    def wrapper(*args: tuple, **kwargs: dict) -> any:
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()

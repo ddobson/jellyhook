@@ -42,7 +42,8 @@ def reap(process: subprocess.Popen, timeout: float = 30) -> int:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
-        pytest.fail(f"process did not exit in {timeout}s:\n{process.stdout.read()}")
+        output = process.stdout.read() if process.stdout else ""
+        pytest.fail(f"process did not exit in {timeout}s:\n{output}")
 
 
 @pytest.fixture
@@ -57,7 +58,7 @@ def processes():
 
 
 @pytest.fixture
-def markers(tmp_path) -> pathlib.Path:
+def markers(tmp_path: pathlib.Path) -> pathlib.Path:
     directory = tmp_path / "markers"
     directory.mkdir()
     return directory

@@ -85,12 +85,16 @@ class ServiceOrchestrator:
         return sorted(enabled_services, key=lambda s: s.get("priority", 100))
 
     def create_service_instance(
-        self, service_name: str, message: dict[str, Any], service_config: dict[str, Any]
+        self,
+        service_name: str | None,
+        message: dict[str, Any],
+        service_config: dict[str, Any],
     ) -> ServiceBase | None:
         """Create an instance of a service.
 
         Args:
-            service_name (str): The name of the service to create.
+            service_name (str | None): The name of the service to create. A missing name is
+                reported as an unknown service.
             message (dict[str, Any]): The webhook message to process.
             service_config (dict[str, Any]): The configuration for the service.
 
@@ -102,7 +106,7 @@ class ServiceOrchestrator:
                 cannot be loaded. That is a deployment problem, not a skip, so it must not be
                 quietly acknowledged.
         """
-        if service_name not in SERVICE_MODULES:
+        if service_name is None or service_name not in SERVICE_MODULES:
             logger.error(f"Unknown service: {service_name}")
             err_msg = f"Unknown service: {service_name}"
             raise ServiceConfigurationError(err_msg)

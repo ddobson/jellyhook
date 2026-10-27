@@ -40,7 +40,7 @@ def test_timer_decorator_with_args(mock_time):
     mock_logger.assert_called_once_with("test_func took 7.0 seconds")
 
 
-def _script(tmp_path, body: str) -> pathlib.Path:
+def _script(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
     """Write an executable shell script and return its path."""
     script = tmp_path / "script.sh"
     script.write_text(f"#!/bin/bash\n{body}\n")

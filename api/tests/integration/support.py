@@ -181,7 +181,8 @@ def establish_queue(broker: Broker, queue: str) -> None:
 def rabbitmqctl(broker: Broker, *args: str) -> str:
     """Run rabbitmqctl inside the container and return its output."""
     # As the rabbitmq user: a root exec can create a root-owned Erlang cookie the broker cannot read
-    return docker("exec", "-u", "rabbitmq", broker.container, "rabbitmqctl", *args).stdout
+    result = docker("exec", "-u", "rabbitmq", broker.container, "rabbitmqctl", *args)
+    return str(result.stdout)
 
 
 def ready_count(broker: Broker, queue: str) -> int:
@@ -196,7 +197,7 @@ def ready_count(broker: Broker, queue: str) -> int:
 
 def take_all(broker: Broker, queue: str) -> list[tuple[pika.BasicProperties, bytes]]:
     """Remove and return every message currently on a queue, with its properties."""
-    taken = []
+    taken: list[tuple[pika.BasicProperties, bytes]] = []
     with connect(broker) as connection:
         channel = connection.channel()
         while True:

@@ -85,8 +85,8 @@ class MediaTrackCleanConfig:
         self,
         keep_original: bool = True,
         keep_default: bool = True,
-        keep_audio_langs: list[str] = None,
-        keep_sub_langs: list[str] = None,
+        keep_audio_langs: list[str] | None = None,
+        keep_sub_langs: list[str] | None = None,
     ) -> None:
         """Initialize the configuration.
 

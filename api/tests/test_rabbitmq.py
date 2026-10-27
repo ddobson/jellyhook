@@ -129,7 +129,7 @@ def test_publish_rejects_non_string_bodies(app):
 
 def test_init_app_requires_a_flask_app():
     with pytest.raises(TypeError):
-        RabbitMQ().init_app(object())
+        RabbitMQ().init_app(object())  # type: ignore[arg-type]  # the wrong type is the point
 
 
 def test_constructor_can_register_the_app_directly():

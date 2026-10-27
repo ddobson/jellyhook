@@ -73,6 +73,8 @@ class RabbitMQ:
         Raises:
             pika.exceptions.AMQPConnectionError: If every attempt failed.
         """
+        if self.app is None:
+            raise RuntimeError("RabbitMQ is not initialised; call init_app() first")
         config = self.app.config
         parameters = pika.ConnectionParameters(
             host=config["RABBITMQ_HOST"],

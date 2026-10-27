@@ -1,6 +1,6 @@
 name: Code Quality
 
-# Validate API and worker projects with linting, unit tests, and coverage reporting.
+# Validate API and worker projects with linting, type checking, unit tests, and coverage reporting.
 
 on:
   push:
@@ -70,6 +70,40 @@ jobs:
           uv run --active ruff check --config ../ruff.toml .
           uv run --active ruff check --select I --config ../ruff.toml .
           uv run --active ruff format --check --config ../ruff.toml .
+
+  typecheck_api:
+    needs: setup
+    name: Typecheck API
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          cache-suffix: ${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Run API type checking
+        working-directory: ./api
+        run: uv run --active mypy --config-file ../mypy.ini .
+
+  typecheck_workers:
+    needs: setup
+    name: Typecheck Workers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          cache-suffix: ${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Run Workers type checking
+        working-directory: ./workers
+        run: uv run --active mypy --config-file ../mypy.ini .
 
   test_api:
     needs: setup

@@ -41,7 +41,7 @@ def mock_movie():
 @pytest.fixture
 def dovi_service(mock_movie, media_dir):
     """Create a DoviConversionService instance for testing."""
-    tmp_dir = f"{media_dir['tmp_path']}/{media_dir['movie_path']}"
+    tmp_dir = pathlib.Path(f"{media_dir['tmp_path']}/{media_dir['movie_path']}")
     return DoviConversionService(mock_movie, tmp_dir)
 
 

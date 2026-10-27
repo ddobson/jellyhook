@@ -25,7 +25,7 @@ class PlaylistAssignmentService(ServiceBase):
         item_id: str,
         message: dict[str, Any],
         rules: list[dict[str, Any]],
-        jellyfin_client=None,
+        jellyfin_client: Any = None,
     ) -> None:
         """Initialize the playlist assignment service with webhook data and rules."""
         self.item_id = item_id
@@ -118,7 +118,7 @@ class PlaylistAssignmentService(ServiceBase):
             )
             return
 
-        if isinstance(fetched, dict):
+        if isinstance(fetched, dict) and self._item_details is not None:
             self._item_details.update(fetched)
 
     def _rule_matches(
@@ -332,15 +332,15 @@ class PlaylistAssignmentService(ServiceBase):
         if isinstance(value, str):
             items = [value]
         elif isinstance(value, Iterable):
-            items = value
+            items = list(value)
         else:
             items = [value]
         normalized = {str(item).strip().lower() for item in items if str(item).strip()}
         return normalized
 
-    def _get_user_id(self) -> str:
+    def _get_user_id(self) -> str | None:
         """Retrieve the user ID from the Jellyfin client configuration."""
-        user_id = self._client.config.data.get("auth.user_id")
+        user_id: str | None = self._client.config.data.get("auth.user_id")
         if not user_id:
             logger.error(
                 "User ID is not configured or available in the Jellyfin client configuration."

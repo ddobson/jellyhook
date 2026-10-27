@@ -137,8 +137,10 @@ def test_a_burst_from_a_library_scan_is_queued_exactly_once_each(broker, live_ap
         threading.Thread(target=sender, args=(range(k * per_sender, (k + 1) * per_sender),))
         for k in range(senders)
     ]
-    [t.start() for t in threads]
-    [t.join(120) for t in threads]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(120)
 
     assert statuses.count(202) == total
     received = [json.loads(body)["n"] for _, body in support.take_all(broker, item_queue)]

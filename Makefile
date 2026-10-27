@@ -27,7 +27,7 @@ typecheck:
 	@echo "Type checking api and workers directories..."
 	@for dir in api workers; do \
 		echo "Type checking $${dir}..."; \
-		(cd "$${dir}" && uv run --active mypy --config-file=../mypy.ini . || true); \
+		(cd "$${dir}" && uv run --active mypy --config-file=../mypy.ini .) || exit 1; \
 	done
 
 test:
