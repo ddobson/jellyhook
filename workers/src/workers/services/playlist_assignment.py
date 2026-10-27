@@ -4,7 +4,7 @@ from typing import Any, Iterable
 
 import requests
 
-from workers.clients.jellyfin import client
+from workers.clients.jellyfin import get_client
 from workers.errors import WebhookWorkerError
 from workers.logger import logger
 from workers.services.service_base import ServiceBase
@@ -25,12 +25,14 @@ class PlaylistAssignmentService(ServiceBase):
         item_id: str,
         message: dict[str, Any],
         rules: list[dict[str, Any]],
-        jellyfin_client=client,
+        jellyfin_client=None,
     ) -> None:
         """Initialize the playlist assignment service with webhook data and rules."""
         self.item_id = item_id
         self.message = message
         self.rules = rules
+        # Resolved here, not at import: connecting to Jellyfin is deferred until a job needs it
+        jellyfin_client = jellyfin_client or get_client()
         self._client = jellyfin_client
         self._api = jellyfin_client.jellyfin
         self._item_details: dict[str, Any] | None = None

@@ -95,7 +95,9 @@ are easy to break by accident.
   `raise ... from exc` chains, so always keep the `from exc` when a service wraps an error.
   Anything else (including other 4xx) is permanent and goes straight to `<queue>.dead`. An unknown or unimportable service raises `ServiceConfigurationError`
   and fails the message; do not turn it into a silent skip.
-- **`metadata_update` failures never fail a message.** Other services' failures do.
+- **`metadata_update` is best-effort, except for transient failures.** A permanent failure there
+  never fails a message; a transient one (Jellyfin down) does, so the update is retried rather than
+  lost. Other services' failures always do.
 - **pika's `BlockingConnection` is not thread-safe.** Only the thread that runs
   `QueueConsumer.run()` may touch the connection or channel. Job threads hand results back through
   `add_callback_threadsafe`. Do not call pika from services.
@@ -113,6 +115,19 @@ are easy to break by accident.
   `stop_grace_period` to at least that plus 15 seconds.
 - **A restricted RabbitMQ user needs write access to `amq.default`**, not just the queue names,
   because retries and dead-lettering publish through the default exchange.
+- **Run external tools with an argument list, never a shell string.** `utils.run_command` takes a
+  list, has a timeout (six hours by default), drains stdout and stderr together, and kills the whole
+  process group on timeout. Pass `ok_returncodes=(0, 1)` for tools that use 1 for "warnings"
+  (mkvmerge).
+- **Never delete the original before the replacement is in place.** Use `fileops.replace_file`. It
+  swaps atomically and handles scratch space on another filesystem.
+- **Every job gets its own scratch directory** from `fileops.make_job_dir`, never one named after
+  the title. The orchestrator registers a service's `tmp_dir` before `exec()` and removes it in a
+  `finally`, so failures clean up too.
+- **Services that rewrite a file expose it as `locked_path`.** The orchestrator holds a per-file
+  lock for the duration of `exec()`.
+- **Get the Jellyfin client with `get_client()` at the point of use**, never at import time. It
+  connects lazily and raises a retryable `JellyfinUnavailableError` when Jellyfin is down.
 - **Running jobs concurrently is a setting, not the default.** All queues share
   `WORKER_MAX_CONCURRENT_JOBS` job slots (1); earlier versions ran one job per webhook.
 
@@ -196,8 +211,6 @@ Things that will trip you up, so you do not mistake them for something you broke
   correctly targets 3.13. pika and debugpy also have no type stubs. `make typecheck` ends with
   `|| true`, so it never fails the build; compare error counts before and after a change rather
   than expecting zero.
-- `workers.clients.jellyfin` authenticates with Jellyfin when it is imported, so importing the
-  services needs a reachable Jellyfin or a stub, and an outage at startup crashes the worker.
 - `api/tests/conftest.py` sets `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD`, which the API ignores.
 - The API publishes messages without persistence or publisher confirms, so events still waiting in
   the queue are lost if the broker restarts.

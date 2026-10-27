@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -111,12 +112,10 @@ def test_media_track_clean_config_from_dict_defaults():
     assert config.keep_sub_langs == []  # Default
 
 
-@patch("workers.services.media_track_clean.tempfile.mkdtemp")
 @patch("workers.services.media_track_clean.Movie")
-def test_media_track_clean_service_init(mock_movie, mock_mkdtemp):
+def test_media_track_clean_service_init(mock_movie, tmp_path):
     """Test initializing the service."""
     mock_movie.full_title = "Test Movie (2023)"
-    mock_mkdtemp.return_value = "/tmp/test_dir"
 
     service = MediaTrackCleanService(
         movie=mock_movie,
@@ -124,6 +123,7 @@ def test_media_track_clean_service_init(mock_movie, mock_mkdtemp):
         keep_default=True,
         keep_audio_langs=["eng"],
         keep_sub_langs=["eng", "spa"],
+        temp_dir=str(tmp_path),
     )
 
     assert service.movie == mock_movie
@@ -131,7 +131,25 @@ def test_media_track_clean_service_init(mock_movie, mock_mkdtemp):
     assert service.config.keep_default is True
     assert service.config.keep_audio_langs == ["eng"]
     assert service.config.keep_sub_langs == ["eng", "spa"]
-    assert service.tmp_dir == Path("/tmp/test_dir")
+    # Each run gets its own scratch path inside the configured one, but nothing is created
+    # until the service actually runs
+    assert service.tmp_dir.parent == tmp_path
+    assert not service.tmp_dir.exists()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_media_track_clean_service_scratch_dirs_are_unique(mock_movie, tmp_path):
+    """Two runs must never share a scratch directory."""
+    first = MediaTrackCleanService(mock_movie, temp_dir=str(tmp_path))
+    second = MediaTrackCleanService(mock_movie, temp_dir=str(tmp_path))
+
+    assert first.tmp_dir != second.tmp_dir
+
+
+def test_media_track_clean_service_locks_the_movie_file(mock_movie, tmp_path):
+    service = MediaTrackCleanService(mock_movie, temp_dir=str(tmp_path))
+
+    assert service.locked_path == Path(mock_movie.full_path)
 
 
 @pytest.fixture
@@ -171,75 +189,89 @@ def mock_ffprobe_output():
     }
 
 
-@patch("workers.services.media_track_clean.os.path.exists")
 @patch("workers.services.media_track_clean.run_command")
-@patch("workers.services.media_track_clean.os.rename")
-@patch("workers.services.media_track_clean.os.unlink")
 def test_media_track_clean_service_exec_success(
-    mock_unlink, mock_rename, mock_run_command, mock_exists, mock_movie, mock_ffprobe_output
+    mock_run_command, mock_movie, mock_ffprobe_output, tmp_path
 ):
-    """Test successful execution of the service."""
-    # Setup mocks
-    mock_exists.return_value = True
+    """Streams are filtered with an argument list, and the result replaces the original."""
+    movie_file = tmp_path / "movie.mkv"
+    movie_file.write_bytes(b"original")
+    mock_movie.full_path = str(movie_file)
 
-    # Set up the movie mock with escaped_path
-    mock_movie.escaped_path = "/fake/path/movie.mkv"
-
-    # Mock run_command to return ffprobe output and success for ffmpeg
     ffprobe_result = MagicMock()
     ffprobe_result.stdout = json.dumps(mock_ffprobe_output)
 
-    ffmpeg_result = MagicMock()
-    ffmpeg_result.returncode = 0
-
-    mock_run_command.side_effect = [ffprobe_result, ffmpeg_result]
-
-    # Create and configure service
     service = MediaTrackCleanService(
         mock_movie,
         keep_original=True,
         keep_default=True,
         keep_audio_langs=["eng"],
         keep_sub_langs=["eng"],
+        temp_dir=str(tmp_path / "scratch"),
     )
-    service.tmp_dir = Path("/tmp/test_dir")
 
-    # Run the service
+    def fake_ffmpeg(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            return ffprobe_result
+        Path(cmd[-1]).write_bytes(b"cleaned")
+        return MagicMock(returncode=0)
+
+    mock_run_command.side_effect = fake_ffmpeg
+
     service.exec()
 
-    # Check if ffprobe was called with the right command
-    ffprobe_expected_cmd = "ffprobe -v error -show_streams -print_format json /fake/path/movie.mkv"
-    assert mock_run_command.call_args_list[0][0][0].strip() == ffprobe_expected_cmd.strip()
+    ffprobe_cmd = mock_run_command.call_args_list[0][0][0]
+    assert ffprobe_cmd == [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_streams",
+        "-print_format",
+        "json",
+        str(movie_file),
+    ]
 
-    # Check if ffmpeg was called
-    ffmpeg_call = mock_run_command.call_args_list[1][0][0]
-    assert "ffmpeg" in ffmpeg_call
-    assert "-i /fake/path/movie.mkv" in ffmpeg_call
+    ffmpeg_cmd = mock_run_command.call_args_list[1][0][0]
+    assert ffmpeg_cmd[0] == "ffmpeg"
+    assert ffmpeg_cmd[ffmpeg_cmd.index("-i") + 1] == str(movie_file)
+    maps = [ffmpeg_cmd[i + 1] for i, part in enumerate(ffmpeg_cmd) if part == "-map"]
+    assert maps == ["0:0", "0:1", "0:3"]  # video, English audio, English subtitle; not Spanish
+    assert ffmpeg_cmd[ffmpeg_cmd.index("-c") + 1] == "copy"
+    assert ffmpeg_cmd[ffmpeg_cmd.index("-map_metadata") + 1] == "0"
 
-    # Verify the map arguments for streams we want to keep
-    assert "-map 0:0" in ffmpeg_call  # Video stream
-    assert "-map 0:1" in ffmpeg_call  # English audio (default)
-    assert "-map 0:3" in ffmpeg_call  # English subtitle
-    assert "-map 0:2" not in ffmpeg_call  # Spanish audio should be removed
+    # The original was swapped for the cleaned file, with nothing left beside it
+    assert movie_file.read_bytes() == b"cleaned"
+    assert [p.name for p in tmp_path.iterdir() if p.name != "scratch"] == ["movie.mkv"]
 
-    # Verify copy settings and metadata preservation
-    assert "-c copy" in ffmpeg_call
-    assert "-map_metadata 0" in ffmpeg_call
 
-    # Check file operations
-    mock_rename.assert_any_call("/fake/path/movie.mkv", "/fake/path/movie.mkv.bak")
-    # The second rename uses a Path object, so we need to check more carefully
-    assert any(
-        args[0][0] == Path("/tmp/test_dir/cleaned.mkv") and args[0][1] == "/fake/path/movie.mkv"
-        for args in mock_rename.call_args_list
+@patch("workers.services.media_track_clean.run_command")
+def test_media_track_clean_service_exec_failure_leaves_original(
+    mock_run_command, mock_movie, mock_ffprobe_output, tmp_path
+):
+    """If ffmpeg fails the original must be untouched."""
+    movie_file = tmp_path / "movie.mkv"
+    movie_file.write_bytes(b"original")
+    mock_movie.full_path = str(movie_file)
+    ffprobe_result = MagicMock()
+    ffprobe_result.stdout = json.dumps(mock_ffprobe_output)
+    mock_run_command.side_effect = [
+        ffprobe_result,
+        subprocess.CalledProcessError(1, ["ffmpeg"], stderr="boom"),
+    ]
+    service = MediaTrackCleanService(
+        mock_movie, keep_audio_langs=["eng"], temp_dir=str(tmp_path / "scratch")
     )
-    mock_unlink.assert_called_once_with("/fake/path/movie.mkv.bak")
+
+    with pytest.raises(subprocess.CalledProcessError):
+        service.exec()
+
+    assert movie_file.read_bytes() == b"original"
 
 
 @patch("workers.services.media_track_clean.os.path.exists")
 @patch("workers.services.media_track_clean.run_command")
 def test_media_track_clean_service_exec_skip_when_no_changes(
-    mock_run_command, mock_exists, mock_movie
+    mock_run_command, mock_exists, mock_movie, tmp_path
 ):
     """Test that processing is skipped when no streams would be removed."""
     # Mock ffprobe output - all streams match our criteria
@@ -271,6 +303,7 @@ def test_media_track_clean_service_exec_skip_when_no_changes(
         keep_default=True,
         keep_audio_langs=["eng"],
         keep_sub_langs=["eng"],
+        temp_dir=str(tmp_path),
     )
 
     # Run the service
@@ -281,12 +314,12 @@ def test_media_track_clean_service_exec_skip_when_no_changes(
 
     # Verify the command contained ffprobe
     ffprobe_call = mock_run_command.call_args[0][0]
-    assert "ffprobe" in ffprobe_call
+    assert ffprobe_call[0] == "ffprobe"
 
 
 @patch.object(MediaTrackCleanService, "file_from_message")
 @patch("workers.services.media_track_clean.Movie")
-def test_media_track_clean_service_from_message(mock_movie_class, mock_file_from_message):
+def test_media_track_clean_service_from_message(mock_movie_class, mock_file_from_message, tmp_path):
     """Test creating a service instance from a message."""
     mock_file_path = MagicMock()
     mock_movie = MagicMock()
@@ -297,7 +330,11 @@ def test_media_track_clean_service_from_message(mock_movie_class, mock_file_from
 
     # Create service from message
     message = {"key": "value"}
-    service_config = {"keep_original": False, "keep_audio_langs": ["eng"]}
+    service_config = {
+        "keep_original": False,
+        "keep_audio_langs": ["eng"],
+        "temp_dir": str(tmp_path),
+    }
 
     service = MediaTrackCleanService.from_message(message, service_config)
 
@@ -311,3 +348,79 @@ def test_media_track_clean_service_from_message(mock_movie_class, mock_file_from
     assert service.config.keep_default is True  # Default value
     assert service.config.keep_audio_langs == ["eng"]
     assert service.config.keep_sub_langs == []  # Default value
+
+
+def test_exec_raises_when_the_movie_file_is_gone(mock_movie, tmp_path):
+    mock_movie.full_path = str(tmp_path / "missing.mkv")
+    service = MediaTrackCleanService(mock_movie, temp_dir=str(tmp_path / "scratch"))
+
+    with pytest.raises(FileNotFoundError):
+        service.exec()
+
+
+@patch("workers.services.media_track_clean.run_command")
+def test_unreadable_ffprobe_output_is_an_error(mock_run_command, mock_movie, tmp_path):
+    movie_file = tmp_path / "movie.mkv"
+    movie_file.write_bytes(b"x")
+    mock_movie.full_path = str(movie_file)
+    mock_run_command.return_value = MagicMock(stdout="not json")
+    service = MediaTrackCleanService(mock_movie, temp_dir=str(tmp_path / "scratch"))
+
+    with pytest.raises(json.JSONDecodeError):
+        service.exec()
+
+
+def test_evaluate_streams_applies_each_keep_rule(mock_movie, tmp_path):
+    """Original flag, default flag and per-type language lists each keep a stream."""
+
+    def stream(index, codec_type, language, *, default=False, original=False):
+        return MediaStream(
+            index=index,
+            codec_type=codec_type,
+            language=language,
+            is_default=default,
+            is_original=original,
+        )
+
+    streams = [
+        stream(0, "video", "und"),
+        stream(1, "audio", "jpn", original=True),
+        stream(2, "audio", "fra", default=True),
+        stream(3, "audio", "eng"),
+        stream(4, "subtitle", "eng"),
+        stream(5, "subtitle", "deu"),
+    ]
+    service = MediaTrackCleanService(
+        mock_movie,
+        keep_original=True,
+        keep_default=True,
+        keep_audio_langs=["eng"],
+        keep_sub_langs=["eng"],
+        temp_dir=str(tmp_path),
+    )
+
+    kept = [s.index for s in service._evaluate_streams(streams)]
+
+    assert kept == [0, 1, 2, 3, 4]  # only the German subtitle goes
+
+
+@patch("workers.services.media_track_clean.run_command")
+def test_skipping_leaves_no_scratch_directory_behind(
+    mock_run_command, mock_movie, mock_ffprobe_output, tmp_path
+):
+    """A run with nothing to remove must not litter TEMP_DIR."""
+    movie_file = tmp_path / "movie.mkv"
+    movie_file.write_bytes(b"x")
+    mock_movie.full_path = str(movie_file)
+    mock_run_command.return_value = MagicMock(stdout=json.dumps(mock_ffprobe_output))
+    scratch = tmp_path / "scratch"
+    service = MediaTrackCleanService(
+        mock_movie,
+        keep_audio_langs=["eng", "spa"],
+        keep_sub_langs=["eng"],
+        temp_dir=str(scratch),
+    )
+
+    service.exec()
+
+    assert not scratch.exists()

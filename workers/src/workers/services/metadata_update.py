@@ -4,7 +4,7 @@ from typing import Any
 
 from jellyfin_apiclient_python.exceptions import HTTPException
 
-from workers.clients.jellyfin import client
+from workers.clients.jellyfin import get_client
 from workers.errors import WebhookWorkerError
 from workers.logger import logger
 from workers.movie import Movie
@@ -189,7 +189,7 @@ class MetadataUpdateService(ServiceBase):
         # Send request to Jellyfin API if there are changes to make
         if data:
             try:
-                client.jellyfin.update_item(self.item_id, data)
+                get_client().jellyfin.update_item(self.item_id, data)
                 logger.info(f"Successfully updated metadata for {self.movie.full_title}")
             except HTTPException as e:
                 logger.error(f"Failed to update metadata: {e}")

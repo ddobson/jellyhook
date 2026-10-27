@@ -16,6 +16,15 @@ class ServiceBase(ABC):
         """
         pass
 
+    @property
+    def locked_path(self) -> pathlib.Path | None:
+        """The media file this service modifies, or None if it leaves files alone.
+
+        The orchestrator holds a per-file lock for the duration of `exec()` so two jobs never
+        rewrite the same file at once. Services that change a file on disk must override this.
+        """
+        return None
+
     @classmethod
     @abstractmethod
     def from_message(cls, message: dict, service_config: dict) -> "ServiceBase":

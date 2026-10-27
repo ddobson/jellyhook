@@ -6,11 +6,17 @@ from jellyfin_apiclient_python.exceptions import HTTPException
 from workers.services.metadata_update import MetadataUpdateError, MetadataUpdateService
 
 
-@mock.patch("workers.clients.jellyfin.client")
+@pytest.fixture
+def mock_client():
+    """Stand in for the Jellyfin API behind `get_client()`, so nothing touches the network."""
+    with mock.patch("workers.services.metadata_update.get_client") as get_client:
+        yield get_client.return_value.jellyfin
+
+
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
 def test_metadata_update_service_init_from_message(
-    mock_from_file, mock_file_from_message, mock_client, mock_message_standup
+    mock_from_file, mock_file_from_message, mock_message_standup
 ):
     # Setup
     file_path = "/data/media/stand-up/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv"
@@ -33,8 +39,7 @@ def test_metadata_update_service_init_from_message(
     assert service.item_data == mock_message_standup
 
 
-@mock.patch("workers.clients.jellyfin.client")
-def test_find_matching_rules_path_match(mock_client, mock_movie_standup):
+def test_find_matching_rules_path_match(mock_movie_standup):
     # Setup
     path_rules = [
         {
@@ -57,8 +62,7 @@ def test_find_matching_rules_path_match(mock_client, mock_movie_standup):
     assert service.matching_rules[0]["genres"]["replace_existing"] is True
 
 
-@mock.patch("workers.clients.jellyfin.client")
-def test_find_matching_rules_path_no_match(mock_client, mock_movie_anime):
+def test_find_matching_rules_path_no_match(mock_movie_anime):
     # Setup
     path_rules = [
         {
@@ -79,8 +83,7 @@ def test_find_matching_rules_path_no_match(mock_client, mock_movie_anime):
     assert len(service.matching_rules) == 0
 
 
-@mock.patch("workers.clients.jellyfin.client")
-def test_find_matching_rules_pattern_match(mock_client, mock_movie_standup):
+def test_find_matching_rules_pattern_match(mock_movie_standup):
     # Setup
     pattern_rules = [
         {
@@ -106,8 +109,7 @@ def test_find_matching_rules_pattern_match(mock_client, mock_movie_standup):
     assert service.matching_rules[0]["genres"]["replace_existing"] is False
 
 
-@mock.patch("workers.clients.jellyfin.client")
-def test_find_matching_rules_pattern_no_match(mock_client, mock_movie_standup):
+def test_find_matching_rules_pattern_no_match(mock_movie_standup):
     # Setup
     pattern_rules = [
         {
@@ -247,7 +249,6 @@ def test_calculate_new_tags_add():
     assert sorted(new_tags) == sorted(["Netflix", "Special", "Comedy Special"])
 
 
-@mock.patch("workers.clients.jellyfin.client.jellyfin")
 def test_update_metadata_with_genre_changes(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
@@ -267,7 +268,6 @@ def test_update_metadata_with_genre_changes(mock_client, mock_movie_standup):
     )
 
 
-@mock.patch("workers.clients.jellyfin.client.jellyfin")
 def test_update_metadata_with_tag_changes(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
@@ -287,7 +287,6 @@ def test_update_metadata_with_tag_changes(mock_client, mock_movie_standup):
     )
 
 
-@mock.patch("workers.clients.jellyfin.client.jellyfin")
 def test_update_metadata_with_both_changes(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
@@ -313,7 +312,6 @@ def test_update_metadata_with_both_changes(mock_client, mock_movie_standup):
     )
 
 
-@mock.patch("workers.clients.jellyfin.client.jellyfin")
 def test_update_metadata_no_changes_needed(mock_client, mock_movie_standup):
     # Setup
     service = MetadataUpdateService(
@@ -335,30 +333,28 @@ def test_update_metadata_no_changes_needed(mock_client, mock_movie_standup):
     # Assert
     mock_client.update_item.assert_not_called()
 
-    @mock.patch("workers.clients.jellyfin.client.jellyfin")
-    def test_update_metadata_jellyfin_error(mock_client, mock_movie_standup):
-        # Setup
-        service = MetadataUpdateService(
-            movie=mock_movie_standup,
-            item_id="123456",
-            original_genres=["Comedy"],
-        )
-        service.matching_rules = [
-            {"genres": {"new_genres": ["Stand-Up"], "replace_existing": True}}
-        ]
 
-        # Configure mock to raise HTTPException
-        mock_client.update_item.side_effect = HTTPException("API Error")
+def test_update_metadata_jellyfin_error(mock_client, mock_movie_standup):
+    # Setup
+    service = MetadataUpdateService(
+        movie=mock_movie_standup,
+        item_id="123456",
+        original_genres=["Comedy"],
+    )
+    service.matching_rules = [{"genres": {"new_genres": ["Stand-Up"], "replace_existing": True}}]
 
-        # Execute and Assert
-        with pytest.raises(MetadataUpdateError) as exc_info:
-            service.update_metadata()
+    # Configure mock to raise HTTPException
+    mock_client.update_item.side_effect = HTTPException(500, "API Error")
 
-        assert "Failed to update metadata for 'Bobby Guy (2023)'" in str(exc_info.value)
-        mock_client.update_item.assert_called_once_with(
-            "123456",
-            {"Genres": ["Stand-Up"]},
-        )
+    # Execute and Assert
+    with pytest.raises(MetadataUpdateError) as exc_info:
+        service.update_metadata()
+
+    assert f"Failed to update metadata for '{mock_movie_standup.full_title}'" in str(exc_info.value)
+    mock_client.update_item.assert_called_once_with(
+        "123456",
+        {"Genres": ["Stand-Up"]},
+    )
 
 
 @mock.patch.object(MetadataUpdateService, "find_matching_rules")
@@ -401,11 +397,10 @@ def test_exec_without_matching_rules(
     mock_update_metadata.assert_not_called()
 
 
-@mock.patch("workers.clients.jellyfin.client.jellyfin")
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
 def test_end_to_end_standup_path(
-    mock_from_file, mock_file_from_message, mock_client, mock_message_standup
+    mock_from_file, mock_file_from_message, mock_message_standup, mock_client
 ):
     # Setup
     file_path = "/data/media/stand-up/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv"
@@ -434,11 +429,10 @@ def test_end_to_end_standup_path(
     )
 
 
-@mock.patch("workers.clients.jellyfin.client.jellyfin")
 @mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
 @mock.patch("workers.services.metadata_update.Movie.from_file")
 def test_end_to_end_pattern_match(
-    mock_from_file, mock_file_from_message, mock_client, mock_message_standup
+    mock_from_file, mock_file_from_message, mock_message_standup, mock_client
 ):
     # Setup
     file_path = "/data/media/movies/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv"
@@ -469,3 +463,25 @@ def test_end_to_end_pattern_match(
         "123456",
         {"Genres": ["Comedy", "Documentary", "Live Performance"]},
     )
+
+
+def test_update_metadata_lets_a_jellyfin_outage_propagate(mock_movie_standup):
+    """get_client() failing must surface as the retryable error, not a MetadataUpdateError."""
+    from workers.clients.jellyfin import JellyfinUnavailableError
+    from workers.errors import is_transient
+
+    service = MetadataUpdateService(
+        movie=mock_movie_standup, item_id="123456", original_genres=["Comedy"]
+    )
+    service.matching_rules = [{"genres": {"new_genres": ["Stand-Up"], "replace_existing": True}}]
+
+    with (
+        mock.patch(
+            "workers.services.metadata_update.get_client",
+            side_effect=JellyfinUnavailableError("down"),
+        ),
+        pytest.raises(JellyfinUnavailableError) as excinfo,
+    ):
+        service.update_metadata()
+
+    assert is_transient(excinfo.value)

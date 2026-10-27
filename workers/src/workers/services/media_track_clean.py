@@ -1,11 +1,11 @@
 import json
 import os
 import pathlib
-import shlex
 import subprocess
-import tempfile
 from typing import Sequence
 
+from workers import fileops
+from workers.config import TEMP_DIR
 from workers.logger import logger
 from workers.models.items import MediaStream, MediaTrackCleanConfig
 from workers.movie import Movie
@@ -23,6 +23,7 @@ class MediaTrackCleanService(ServiceBase):
         keep_default: bool = True,
         keep_audio_langs: list[str] = None,
         keep_sub_langs: list[str] = None,
+        temp_dir: str = TEMP_DIR,
     ) -> None:
         """Initialize the media track clean service.
 
@@ -32,6 +33,7 @@ class MediaTrackCleanService(ServiceBase):
             keep_default: Whether to keep default tracks.
             keep_audio_langs: List of languages to keep for audio tracks.
             keep_sub_langs: List of languages to keep for subtitle tracks.
+            temp_dir: Where to create this run's scratch directory.
         """
         self.movie = movie
         self.config = MediaTrackCleanConfig(
@@ -40,12 +42,18 @@ class MediaTrackCleanService(ServiceBase):
             keep_audio_langs=keep_audio_langs or [],
             keep_sub_langs=keep_sub_langs or [],
         )
-        self.tmp_dir = pathlib.Path(tempfile.mkdtemp(prefix="jellyhook_media_track_clean_"))
+        # Only a path for now; the directory is created in exec(), if there is work to do
+        self.tmp_dir = fileops.job_dir_path(temp_dir, "media_track_clean")
         logger.info(
             f"Initialized MediaTrackCleanService for {movie.full_title} with config: "
             f"keep_original={keep_original}, keep_default={keep_default}, "
             f"keep_audio_langs={keep_audio_langs}, keep_sub_langs={keep_sub_langs}"
         )
+
+    @property
+    def locked_path(self) -> pathlib.Path:
+        """The movie file this service rewrites."""
+        return pathlib.Path(self.movie.full_path)
 
     def exec(self) -> None:
         """Execute the media track clean service."""
@@ -67,7 +75,7 @@ class MediaTrackCleanService(ServiceBase):
             )
             return
 
-        # Create output file name
+        self.tmp_dir.mkdir(parents=True, exist_ok=True)
         output_file = self._create_output_file_path()
 
         # Generate and execute ffmpeg command to remove unwanted tracks
@@ -83,17 +91,15 @@ class MediaTrackCleanService(ServiceBase):
             A list of MediaStream objects.
         """
         # Call ffprobe to get stream information
-        cmd_parts = [
+        cmd = [
             "ffprobe",
             "-v",
             "error",
             "-show_streams",
             "-print_format",
             "json",
+            self.movie.full_path,
         ]
-
-        # Convert to shell command
-        cmd = " ".join(shlex.quote(str(part)) for part in cmd_parts) + f" {self.movie.escaped_path}"
 
         # Execute the command using the utility function
         try:
@@ -191,24 +197,21 @@ class MediaTrackCleanService(ServiceBase):
             output_file: Path to the output file.
         """
         # Build ffmpeg command parts
-        cmd_parts = ["ffmpeg", "-i", self.movie.escaped_path]
+        # -nostdin: ffmpeg otherwise reads the keyboard; -loglevel/-stats keep stderr short
+        cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-i", self.movie.full_path]
 
         # Add map options for each stream to keep
         for stream in streams_to_keep:
-            cmd_parts.extend(["-map", f"0:{stream.index}"])
+            cmd.extend(["-map", f"0:{stream.index}"])
 
         # Copy streams without re-encoding
-        cmd_parts.extend(["-c", "copy"])
+        cmd.extend(["-c", "copy"])
 
         # Copy metadata
-        cmd_parts.extend(["-map_metadata", "0"])
+        cmd.extend(["-map_metadata", "0"])
 
         # Add output file
-        escaped_output = shlex.quote(str(output_file))
-        cmd_parts.append(escaped_output)
-
-        # Convert to shell command
-        cmd = " ".join(str(part) for part in cmd_parts)
+        cmd.append(str(output_file))
 
         logger.info(f"Running ffmpeg command to clean tracks: {cmd}")
 
@@ -227,23 +230,10 @@ class MediaTrackCleanService(ServiceBase):
         Args:
             output_file: Path to the processed file.
         """
-        # Get original file path
-        original_file = self.movie.full_path
-
-        # Create a backup file name
-        backup_file = f"{original_file}.bak"
-
-        # Move original file to backup
-        os.rename(original_file, backup_file)
-        logger.info(f"Created backup of original file at {backup_file}")
-
-        # Move new file to original location
-        os.rename(output_file, original_file)
-        logger.info(f"Moved cleaned file to original location: {original_file}")
-
-        # Remove backup file
-        os.unlink(backup_file)
-        logger.info(f"Removed backup file: {backup_file}")
+        # One atomic swap. The old backup-rename-delete dance had a window where the movie
+        # existed only as "<name>.bak", which no library scan would pick up.
+        fileops.replace_file(output_file, pathlib.Path(self.movie.full_path))
+        logger.info(f"Replaced {self.movie.full_path} with the cleaned file")
 
     @classmethod
     def from_message(cls, message: dict, service_config: dict) -> "ServiceBase":
@@ -263,6 +253,7 @@ class MediaTrackCleanService(ServiceBase):
             "keep_default": service_config.get("keep_default", True),
             "keep_audio_langs": service_config.get("keep_audio_langs", []),
             "keep_sub_langs": service_config.get("keep_sub_langs", []),
+            "temp_dir": service_config.get("temp_dir", TEMP_DIR),
         }
 
         return cls(movie, **kwargs)
