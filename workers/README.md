@@ -69,16 +69,18 @@ carrying on with nothing consuming. Run it under a restart policy (`restart: unl
 
 On `SIGTERM` (`docker stop`) the worker stops taking new messages and gives in-flight jobs
 `WORKER_SHUTDOWN_GRACE_SECONDS` to finish. A job still running after that is abandoned and its
-message is redelivered, so keep the container's `stop_grace_period` above that value.
+message is redelivered. Set the container's `stop_grace_period` to at least that value plus 15
+seconds (Docker's default of 10 would kill the worker mid-drain).
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `WORKER_MAX_ATTEMPTS` | `5` | Tries (first one included) before a transient failure is dead-lettered |
-| `WORKER_MAX_CONCURRENT_JOBS` | `1` | Jobs running at once across all queues. Raise only if the host can take several concurrent ffmpeg/mkvmerge/dovi_tool runs |
+| `WORKER_MAX_CONCURRENT_JOBS` | `1` | Jobs running at once across all queues. Earlier versions ran one per webhook, so with several webhooks raise this to match. Only do so if the host can take several concurrent ffmpeg/mkvmerge/dovi_tool runs |
 | `WORKER_SHUTDOWN_GRACE_SECONDS` | `45` | How long in-flight jobs may finish after `SIGTERM` |
 | `RABBITMQ_HEARTBEAT` | `60` | AMQP heartbeat interval in seconds |
 
-For a walkthrough with worked examples, see
+For a walkthrough with worked examples, and a checklist for deploying outside Docker Compose
+(restart policy, stop timeout, broker `consumer_timeout`, restricted-user permissions), see
 [How the Worker Consumes Messages](../docs/message-consumption.md).
 
 The retry delay (60 seconds) is part of the `<queue>.retry` declaration. To change it, delete

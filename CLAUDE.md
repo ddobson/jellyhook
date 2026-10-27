@@ -90,9 +90,10 @@ are easy to break by accident.
   or dead-letter copy is publisher-confirmed). The same event can therefore be processed twice, and
   a retry re-runs *every* service for it. Services must be safe to repeat.
 - **Classify failures by exception type.** Raise `TransientError` (or a subclass such as
-  `MediaNotFoundError`) for something that may clear up on its own; `is_transient()` in
-  `errors.py` also treats network errors as transient. Anything else is permanent and goes
-  straight to `<queue>.dead`. An unknown or unimportable service raises `ServiceConfigurationError`
+  `MediaNotFoundError`) for something that may clear up on its own. `is_transient()` in
+  `errors.py` also treats network errors and HTTP 5xx/408/429 as transient, and follows
+  `raise ... from exc` chains, so always keep the `from exc` when a service wraps an error.
+  Anything else (including other 4xx) is permanent and goes straight to `<queue>.dead`. An unknown or unimportable service raises `ServiceConfigurationError`
   and fails the message; do not turn it into a silent skip.
 - **`metadata_update` failures never fail a message.** Other services' failures do.
 - **pika's `BlockingConnection` is not thread-safe.** Only the thread that runs
@@ -108,8 +109,12 @@ are easy to break by accident.
 - **Fail fast, don't reconnect in-process.** A dropped connection or a stopped consumer makes the
   supervisor exit non-zero, and Docker's `restart: unless-stopped` brings the worker back. Do not
   add reconnect loops inside the process.
-- **SIGTERM drains.** In-flight jobs get `WORKER_SHUTDOWN_GRACE_SECONDS`; keep the container's
-  `stop_grace_period` above it.
+- **SIGTERM drains.** In-flight jobs get `WORKER_SHUTDOWN_GRACE_SECONDS`; set the container's
+  `stop_grace_period` to at least that plus 15 seconds.
+- **A restricted RabbitMQ user needs write access to `amq.default`**, not just the queue names,
+  because retries and dead-lettering publish through the default exchange.
+- **Running jobs concurrently is a setting, not the default.** All queues share
+  `WORKER_MAX_CONCURRENT_JOBS` job slots (1); earlier versions ran one job per webhook.
 
 Worker settings (defaults in `workers/src/workers/config/constants.py`):
 

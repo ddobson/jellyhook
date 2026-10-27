@@ -23,16 +23,50 @@ class ServiceConfigurationError(WebhookWorkerError):
     """
 
 
+# HTTP statuses worth retrying. Other 4xx (bad API key, unknown item) will fail again.
+_RETRYABLE_STATUSES = frozenset({408, 429})
+
+
+def _is_retryable_http_error(error: requests.HTTPError) -> bool:
+    """Decide whether an HTTP error response is worth retrying.
+
+    Args:
+        error (requests.HTTPError): The error, normally from `raise_for_status()`.
+
+    Returns:
+        bool: True for 5xx, 408 and 429. True when there is no response to inspect.
+    """
+    response = error.response
+    # Not `if response`: a requests.Response is falsy for 4xx and 5xx statuses
+    if response is None:
+        return True
+    return response.status_code >= 500 or response.status_code in _RETRYABLE_STATUSES
+
+
 def is_transient(error: BaseException) -> bool:
     """Decide whether a failure is worth retrying.
+
+    Services often wrap low-level errors (`raise PlaylistAssignmentError(...) from exc`), so this
+    follows the explicit `__cause__` chain and decides on the first recognisable error in it.
+    Wrap with `from exc` to keep a failure classifiable.
 
     Args:
         error (BaseException): The exception raised while processing a message.
 
     Returns:
-        bool: True for explicit transient errors and for network failures talking to Jellyfin.
+        bool: True for explicit transient errors, network failures, and HTTP 5xx/408/429.
+            False for everything else, including other HTTP 4xx responses.
     """
-    return isinstance(
-        error,
-        TransientError | requests.RequestException | ConnectionError | TimeoutError,
-    )
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, requests.HTTPError):  # before RequestException, its parent
+            return _is_retryable_http_error(current)
+        if isinstance(
+            current,
+            TransientError | requests.RequestException | ConnectionError | TimeoutError,
+        ):
+            return True
+        current = current.__cause__
+    return False

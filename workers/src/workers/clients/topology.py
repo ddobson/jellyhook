@@ -37,12 +37,15 @@ def dead_queue_name(queue: str) -> str:
     return f"{queue}.dead"
 
 
-def declare_queues(channel: BlockingChannel, queue: str) -> None:
+def declare_queues(channel: BlockingChannel, queue: str) -> int:
     """Declare a work queue and its retry and dead-letter companions.
 
     Args:
         channel (BlockingChannel): The channel to declare on.
         queue (str): The name of the work queue.
+
+    Returns:
+        int: How many messages are waiting on the dead-letter queue.
     """
     channel.queue_declare(queue=queue, durable=True)
     channel.queue_declare(
@@ -54,4 +57,5 @@ def declare_queues(channel: BlockingChannel, queue: str) -> None:
             "x-dead-letter-routing-key": queue,
         },
     )
-    channel.queue_declare(queue=dead_queue_name(queue), durable=True)
+    dead = channel.queue_declare(queue=dead_queue_name(queue), durable=True)
+    return int(dead.method.message_count)

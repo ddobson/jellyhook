@@ -11,6 +11,7 @@ from workers.errors import MediaNotFoundError, ServiceConfigurationError
 from workers.results import Outcome, ProcessingResult
 from workers.services.dovi_conversion import DoviConversionService
 from workers.services.orchestrator import ServiceOrchestrator, process_webhook_message
+from workers.services.playlist_assignment import PlaylistAssignmentError
 from workers.services.service_base import ServiceBase
 
 
@@ -610,3 +611,42 @@ def test_process_webhook_message_unexpected_error_is_classified():
 
     assert crashed.outcome is Outcome.FAILED
     assert timed_out.outcome is Outcome.RETRY
+
+
+def _wrapped_playlist_error(cause):
+    """Raise-and-catch to chain the error the way playlist_assignment does (`from exc`)."""
+    try:
+        try:
+            raise cause
+        except Exception as exc:
+            raise PlaylistAssignmentError("Failed to add item to playlist") from exc
+    except PlaylistAssignmentError as error:
+        return error
+
+
+def test_process_webhook_retries_a_playlist_service_that_wrapped_a_jellyfin_outage(orchestrator):
+    """The service re-raises Jellyfin failures as its own type; that must not hide the cause."""
+    import requests
+
+    _enable_services(orchestrator, ["playlist_assignment"])
+    service = _failing_service(_wrapped_playlist_error(requests.ConnectionError("refused")))
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.RETRY
+
+
+def test_process_webhook_does_not_retry_a_playlist_service_that_got_a_401(orchestrator):
+    """A rejected API key will not fix itself in four minutes."""
+    import requests
+
+    response = requests.Response()
+    response.status_code = 401
+    _enable_services(orchestrator, ["playlist_assignment"])
+    service = _failing_service(_wrapped_playlist_error(requests.HTTPError(response=response)))
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.FAILED

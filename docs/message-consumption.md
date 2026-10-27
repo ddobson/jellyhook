@@ -73,9 +73,16 @@ recoverable; lost events are not.
 |---|---|
 | The video file is not on disk yet | Retry |
 | Jellyfin is unreachable or times out | Retry |
+| Jellyfin answers with a server error (5xx), `408` or `429` | Retry |
+| Jellyfin rejects the request with any other 4xx (a bad API key, an unknown item) | Failed |
 | An unknown or unloadable service in your config | Failed |
 | A message body that is not a JSON object | Failed |
 | Any other error inside a service | Failed |
+
+Services often catch a low-level error and re-raise their own (`raise SomeServiceError(...) from
+exc`). The worker follows that chain to find the underlying cause, so a wrapped connection failure
+is still retried and a wrapped `401` is not. Keep the `from exc` when you write a service, or the
+cause is hidden and the failure is treated as permanent.
 
 A message with several failures is retried if *any* of them is retryable. The permanent one will
 simply fail again and the message ends up on `.dead`.
@@ -171,8 +178,10 @@ The worker receives `SIGTERM` and stops taking new messages. It then gives runni
 - A **long job** (a 35-minute conversion) will not finish in time. The worker disconnects, the
   broker sees an unacknowledged message and puts it back, and the new worker starts that item over.
 
-Keep the container's `stop_grace_period` above `WORKER_SHUTDOWN_GRACE_SECONDS`; the compose file
-uses 60 seconds against the default 45.
+Set the container's `stop_grace_period` to at least `WORKER_SHUTDOWN_GRACE_SECONDS` plus 15 seconds
+(the worker allows a few extra seconds to disconnect). The compose file uses 60 against the default
+45. Docker's own default of 10 seconds is too short: the worker would be killed in the middle of
+draining.
 
 ### RabbitMQ restarts or the network drops
 
@@ -192,9 +201,59 @@ and the message is delivered again, so the job runs twice. The bundled `rabbitmq
 ### Several webhooks
 
 Each enabled webhook gets its own queue and its own connection. They share one pool of job slots
-(`WORKER_MAX_CONCURRENT_JOBS`, default 1), so heavy work on two different queues still runs one job
-at a time unless you raise it. With only the `item_added` webhook, that setting has no effect,
-because one queue never has two jobs in flight.
+(`WORKER_MAX_CONCURRENT_JOBS`, default 1), so heavy work on two different queues runs one job at a
+time unless you raise it. With only the `item_added` webhook, that setting has no effect, because
+one queue never has two jobs in flight.
+
+**This is a change from earlier versions**, which ran one job per webhook in parallel. If you have
+several enabled webhooks, their jobs now queue behind each other. One job at a time is the safer
+default for ffmpeg and dovi_tool, which compete hard for disk and CPU. Set
+`WORKER_MAX_CONCURRENT_JOBS` to the number of webhooks to get the old behaviour back, if your host
+can take that many conversions at once.
+
+## Deploying and upgrading
+
+Things to put in place when you run the worker. The Docker Compose file in this repo already does
+the first three; other platforms (Portainer, Unraid, Kubernetes, plain `docker run`) need them by
+hand.
+
+1. **A restart policy.** A dropped connection makes the worker exit non-zero on purpose, so
+   something must start it again (`restart: unless-stopped` or the platform's equivalent). Without
+   one, the worker stays down after the first broker restart.
+2. **A long enough stop timeout.** `stop_grace_period` of at least
+   `WORKER_SHUTDOWN_GRACE_SECONDS` + 15 seconds (see above).
+3. **A long enough ack timeout on the broker.** Set `consumer_timeout = 86400000` (24 hours) in
+   `rabbitmq.conf`, as `rabbitmq/rabbitmq.conf` does for the bundled broker. A broker you run
+   yourself keeps RabbitMQ's 30-minute default otherwise, which is shorter than a large Dolby Vision
+   conversion. An unacknowledged message is held for the whole job.
+4. **Permissions, if you use a restricted RabbitMQ user.** The worker declares `<queue>.retry` and
+   `<queue>.dead` and publishes to them through the default exchange. Grant the user configure and
+   read on all three queue names, and write on those names **plus `amq.default`**:
+
+   ```bash
+   rabbitmqctl add_user jellyhook-worker '<password>'
+   rabbitmqctl set_permissions -p / jellyhook-worker \
+     '^jellyfin:item_added(\.retry|\.dead)?$' \
+     '^(jellyfin:item_added(\.retry|\.dead)?|amq\.default)$' \
+     '^jellyfin:item_added(\.retry|\.dead)?$'
+   ```
+
+   (The arguments are configure, write, read. Repeat the queue names for each enabled webhook.)
+   Without the `amq.default` write permission, publishing a retry fails with `ACCESS_REFUSED`
+   even though the queue permissions look right. The API publishes the same way, so a restricted
+   API user needs that write permission too. The default `guest` user needs none of this.
+5. **A check on `.dead`.** Nothing consumes it and nothing alerts on it. The worker logs an `ERROR`
+   line ("Giving up on a message…") each time it dead-letters one, and a `WARNING` at startup if any
+   are waiting. You can also look at the queue in the management UI or run
+   `rabbitmqctl list_queues name messages` and watch the `.dead` rows. If you want an alert, hook it
+   to that log line or that count.
+
+**Existing queues need no migration.** The work queue is declared exactly as before. Do not add
+dead-letter arguments to it. If you change `RETRY_DELAY_MS` later, delete `<queue>.retry` first.
+
+**Rolling back is safe.** The broker's own TTL on `<queue>.retry` pushes parked messages back onto
+the work queue even if an older worker is running. The leftover `.retry` and `.dead` queues are
+harmless, though the older worker goes back to dropping failed messages.
 
 ## Known limitations
 
@@ -205,6 +264,19 @@ These are properties of the current design, worth keeping in mind when reading t
   audited for every service. Be cautious with any service whose effect is not idempotent.
 - **At-least-once, not exactly-once.** After a crash or disconnect the same event can be processed
   twice.
+- **Dolby Vision conversion after an abandoned run.** A conversion cut off mid-way (shutdown past
+  the grace period, a broker restart) is redelivered and starts again from the beginning. What the
+  code does today:
+  - Once a conversion has *finished*, a repeat sees Profile 8 and does nothing, so repeating a
+    completed one is harmless.
+  - The original file is only touched in the last step, which deletes it and then renames the
+    finished file into place. An interruption before that leaves the original intact.
+  - Files from the abandoned run stay in the per-title temp directory, which the rerun reuses. The
+    rerun relies on mkvextract, dovi_tool and mkvmerge overwriting them; that has not been verified.
+  - If the process dies between the delete and the rename, or the rename fails because the temp
+    directory is on a different filesystem, the original is gone. The rerun then finds no video and
+    is retried until it is dead-lettered. The finished file should still be in the temp directory
+    and can be moved into place by hand.
 - **The API does not yet mark messages as persistent.** If RabbitMQ itself restarts, events that
   were still waiting in the queue are lost, although the queue survives. The worker's own retry and
   dead-letter copies are persistent.

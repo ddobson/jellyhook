@@ -112,7 +112,13 @@ class QueueConsumer:
         try:
             channel = self._connection.channel()
             channel.confirm_delivery()
-            topology.declare_queues(channel, self.queue)
+            dead_count = topology.declare_queues(channel, self.queue)
+            if dead_count:
+                dead_queue = topology.dead_queue_name(self.queue)
+                logger.warning(
+                    f"{dead_count} message(s) are waiting on {dead_queue}. "
+                    "Nothing consumes that queue; inspect them in the RabbitMQ management UI."
+                )
             channel.basic_qos(prefetch_count=1)
             consumer_tag = channel.basic_consume(
                 queue=self.queue,

@@ -40,3 +40,10 @@ def test_declare_queues_declares_a_durable_dead_letter_queue():
 
     channel.queue_declare.assert_any_call(queue="q.dead", durable=True)
     assert channel.queue_declare.call_count == 3
+
+
+def test_declare_queues_reports_how_many_messages_are_dead_lettered():
+    channel = mock.MagicMock()
+    channel.queue_declare.return_value.method.message_count = 4
+
+    assert topology.declare_queues(channel, "q") == 4

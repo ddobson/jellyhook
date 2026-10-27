@@ -42,6 +42,7 @@ def channel(connection):
     """The channel the fake connection hands out."""
     channel = connection.channel.return_value
     channel.basic_consume.return_value = "ctag-1"
+    channel.queue_declare.return_value.method.message_count = 0
     return channel
 
 
@@ -396,3 +397,31 @@ def test_slot_is_released_when_the_handler_raises(make_consumer, channel):
         deliver(consumer, channel)
 
     assert slots.acquire(blocking=False) is True
+
+
+def test_run_warns_when_messages_are_waiting_on_the_dead_letter_queue(
+    make_consumer, connection, channel, stop_event
+):
+    """Nothing consumes `.dead`, so startup is the worker's chance to point at it."""
+    channel.queue_declare.return_value.method.message_count = 3
+    stop_event.set()
+    consumer = make_consumer()
+
+    with mock.patch.object(rabbitmq, "logger") as logger:
+        consumer.run(shutdown_grace=1)
+
+    [warning] = [c.args[0] for c in logger.warning.call_args_list if "waiting on" in c.args[0]]
+    assert "3 message(s)" in warning
+    assert f"{QUEUE}.dead" in warning
+
+
+def test_run_stays_quiet_when_the_dead_letter_queue_is_empty(
+    make_consumer, connection, channel, stop_event
+):
+    stop_event.set()
+    consumer = make_consumer()
+
+    with mock.patch.object(rabbitmq, "logger") as logger:
+        consumer.run(shutdown_grace=1)
+
+    logger.warning.assert_not_called()
