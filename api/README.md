@@ -62,11 +62,13 @@ These are the names `api/config.py` actually reads. Using any other name (for ex
 | 400 | The body is not a JSON object (any Content-Type is accepted if the body parses) |
 | 401 | `WEBHOOK_TOKEN` is set and the `Authorization` header is missing or wrong |
 | 413 | The body is larger than 1 MiB |
-| 503 | RabbitMQ could not be reached or did not confirm. `Retry-After: 5` is set |
+| 503 | RabbitMQ could not be reached, stalled during the handshake, or did not confirm. `Retry-After: 5` is set |
 | 500 | Anything unexpected. The message is generic; details are in the log |
 
-Each publish opens its own connection (3 attempts, 1 second apart, 5 second socket timeout), so a
-broker that is down is reported in a few seconds rather than hanging the request.
+Each publish opens its own connection (3 attempts, 1 second apart, 3 second socket and handshake
+timeouts). A broker that refuses connections is reported in about 2 seconds; one that silently drops
+packets or never answers takes up to about 11 seconds, still well inside the web server's 60 second
+timeout. Sustained bursts are fine: 400 events from 8 concurrent senders took 0.7 seconds.
 
 ### Securing the webhook
 

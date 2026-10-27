@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import pika
 import pytest
 from flask import Flask
+from pika.adapters.utils.connection_workflow import AMQPConnectorStackTimeout
 from pika.exceptions import AMQPConnectionError, NackError, StreamLostError, UnroutableError
 
 from api.rabbitmq import PublishError, RabbitMQ
@@ -33,7 +34,7 @@ def test_connect(mock_connection_params, mock_credentials, mock_blocking_connect
     mock_blocking_connection.assert_called_once()
 
 
-def test_connect_passes_retry_settings_to_pika(app):
+def test_connect_passes_retry_and_timeout_settings_to_pika(app):
     with (
         patch("api.rabbitmq.pika.BlockingConnection"),
         patch("api.rabbitmq.pika.ConnectionParameters") as params,
@@ -43,7 +44,8 @@ def test_connect_passes_retry_settings_to_pika(app):
     kwargs = params.call_args.kwargs
     assert kwargs["connection_attempts"] == 3
     assert kwargs["retry_delay"] == 1
-    assert kwargs["socket_timeout"] == 5
+    assert kwargs["socket_timeout"] == 3
+    assert kwargs["stack_timeout"] == 3
     assert kwargs["port"] == 5672
 
 
@@ -83,6 +85,7 @@ def test_publish_closes_its_connection(app, broker):
         NackError([]),
         StreamLostError("lost"),
         OSError("network is unreachable"),
+        AMQPConnectorStackTimeout("handshake stalled"),
     ],
 )
 def test_publish_failure_becomes_publish_error_and_still_closes(app, broker, error):
@@ -146,3 +149,15 @@ def test_publish_call_order_is_confirm_declare_publish(app, broker):
         "queue_declare",
         "basic_publish",
     ]
+
+
+def test_publish_error_when_the_handshake_stalls(app):
+    """A broker that accepts the TCP connection but never answers is a 503, not a 500."""
+    with (
+        patch(
+            "api.rabbitmq.pika.BlockingConnection",
+            side_effect=AMQPConnectorStackTimeout("Timeout during AMQP handshake"),
+        ),
+        pytest.raises(PublishError, match="handshake"),
+    ):
+        app.extensions["rabbitmq"].publish(queue="q", body="b")

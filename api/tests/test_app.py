@@ -4,8 +4,7 @@ from unittest.mock import patch
 from api.app import create_app
 
 
-def test_create_app_wires_health_hooks_and_extension(monkeypatch):
-    monkeypatch.delenv("WEBHOOK_TOKEN", raising=False)
+def test_create_app_wires_health_hooks_and_extension():
     with patch("api.app.logging.init_app"):
         app = create_app("development")
 

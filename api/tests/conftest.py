@@ -24,7 +24,6 @@ def app():
     rabbitmq.init_app(app)
     # Verify the extension was registered
     assert "rabbitmq" in app.extensions
-    assert hasattr(app, "rabbitmq")
     return app
 
 

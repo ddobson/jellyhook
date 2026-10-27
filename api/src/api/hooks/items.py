@@ -25,11 +25,14 @@ def item_added() -> Response:
     if not isinstance(data, dict):
         abort(400, "Request body must be a JSON object")
 
+    # Logged before publishing so nothing that can go wrong in logging can turn a message that is
+    # already queued into a 500 (and a duplicate when the sender retries).
+    current_app.logger.info({"operation": "item_added", "data": data})
+
     rabbitmq = current_app.extensions["rabbitmq"]
     rabbitmq.publish(
         queue=ITEM_ADDED_QUEUE,
         body=json.dumps(data),
         content_type="application/json",
     )
-    current_app.logger.info({"operation": "item_added", "data": data})
     return Response(status=202)

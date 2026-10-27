@@ -19,6 +19,7 @@ import contextlib
 
 import pika
 from flask import Flask
+from pika.adapters.utils.connection_workflow import AMQPConnectorException
 from pika.exceptions import AMQPError
 
 
@@ -53,14 +54,18 @@ class RabbitMQ:
         app.config.setdefault("RABBITMQ_USER", "guest")
         app.config.setdefault("RABBITMQ_PASS", "guest")
         app.config.setdefault("RABBITMQ_VHOST", "/")
-        # How many times to try to connect, and how long to wait between and during tries. Keep
-        # attempts * (socket timeout + delay) comfortably under the web server's request timeout.
+        # How many times to try to connect, and how long to wait between and during tries. A broker
+        # that drops packets costs attempts * socket timeout + (attempts - 1) * delay (11 s by
+        # default); a refused connection fails in about 2 s. Keep this well under the web server's
+        # request timeout.
         app.config.setdefault("RABBITMQ_CONNECTION_ATTEMPTS", 3)
         app.config.setdefault("RABBITMQ_RETRY_DELAY", 1)
-        app.config.setdefault("RABBITMQ_SOCKET_TIMEOUT", 5)
+        app.config.setdefault("RABBITMQ_SOCKET_TIMEOUT", 3)
+        # Longest the AMQP handshake may take. pika's own default is 15 s per attempt, which a
+        # broker that accepts the connection but never answers would multiply by every attempt.
+        app.config.setdefault("RABBITMQ_STACK_TIMEOUT", 3)
 
         app.extensions["rabbitmq"] = self
-        app.rabbitmq = self
 
     def connect(self) -> pika.BlockingConnection:
         """Open a new RabbitMQ connection, retrying a few times.
@@ -80,6 +85,7 @@ class RabbitMQ:
             connection_attempts=config["RABBITMQ_CONNECTION_ATTEMPTS"],
             retry_delay=config["RABBITMQ_RETRY_DELAY"],
             socket_timeout=config["RABBITMQ_SOCKET_TIMEOUT"],
+            stack_timeout=config["RABBITMQ_STACK_TIMEOUT"],
             blocked_connection_timeout=config["RABBITMQ_SOCKET_TIMEOUT"] * 6,
         )
         return pika.BlockingConnection(parameters)
@@ -127,7 +133,9 @@ class RabbitMQ:
                 properties=properties,
                 mandatory=True,
             )
-        except (AMQPError, OSError) as e:
+        except (AMQPError, AMQPConnectorException, OSError) as e:
+            # AMQPConnectorException (handshake timeout, connect failure) is a sibling of
+            # AMQPError in pika, not a subclass, so it has to be named here.
             raise PublishError(f"Could not publish to {queue!r}: {type(e).__name__}: {e}") from e
         finally:
             self._close(connection)

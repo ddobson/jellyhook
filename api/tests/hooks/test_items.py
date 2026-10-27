@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -92,3 +92,13 @@ def test_unknown_hook_is_404_not_500(client):
     response = client.post("/hooks/nope", json={})
 
     assert response.status_code == 404
+
+
+def test_a_logging_failure_cannot_turn_a_queued_message_into_a_500(app, client, mock_rabbitmq):
+    """The payload is logged before publishing, so publishing is the last thing that can fail."""
+    order = []
+    mock_rabbitmq.publish.side_effect = lambda **kw: order.append("publish")
+    with patch.object(app.logger, "info", side_effect=lambda *a, **k: order.append("log")):
+        client.post("/hooks/item_added", json={"itemId": "1"})
+
+    assert order == ["log", "publish"]
