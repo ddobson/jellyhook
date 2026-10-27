@@ -99,7 +99,8 @@ class ServiceOrchestrator:
             service_config (dict[str, Any]): The configuration for the service.
 
         Returns:
-            An instance of the service, or None if the service chose to skip this message.
+            An instance of the service, or None if the service does not apply to this message
+            (a movies-only service and an item that is not a movie).
 
         Raises:
             ServiceConfigurationError: If the service name is unknown or its module/class
@@ -118,6 +119,10 @@ class ServiceOrchestrator:
             logger.error(f"Failed to import service {service_name}: {e}")
             err_msg = f"Failed to import service {service_name}: {e}"
             raise ServiceConfigurationError(err_msg) from e
+
+        if service_class.movies_only and not ServiceBase.is_movie_message(message):
+            logger.info(f"Skipping {service_name}: {message.get('ItemType')} is not a movie")
+            return None
 
         # Outside the try above: an AttributeError raised by the service itself is a bug in
         # that service, and should surface as one rather than as a missing class.

@@ -28,6 +28,8 @@ RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 RABBITMQ_PORT = _port_from_env("RABBITMQ_PORT", 5672)
 RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
 RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+# Must match the API's RABBITMQ_VHOST, or the worker consumes an empty queue somewhere else
+RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
 TEMP_DIR = os.getenv("TEMP_DIR", "/data/tmp")
 WORKER_ENV = os.getenv("WORKER_ENV", "development")
 

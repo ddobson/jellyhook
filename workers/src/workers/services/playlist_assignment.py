@@ -5,7 +5,7 @@ from typing import Any, Iterable
 import requests
 
 from workers.clients.jellyfin import get_client
-from workers.errors import WebhookWorkerError
+from workers.errors import WebhookWorkerError, is_transient
 from workers.logger import logger
 from workers.services.service_base import ServiceBase
 
@@ -31,11 +31,21 @@ class PlaylistAssignmentService(ServiceBase):
         self.item_id = item_id
         self.message = message
         self.rules = rules
-        # Resolved here, not at import: connecting to Jellyfin is deferred until a job needs it
-        jellyfin_client = jellyfin_client or get_client()
-        self._client = jellyfin_client
-        self._api = jellyfin_client.jellyfin
+        # None until first used: a message with no work to do must not need Jellyfin up
+        self._jellyfin_client = jellyfin_client
         self._item_details: dict[str, Any] | None = None
+
+    @property
+    def _client(self) -> Any:
+        """The Jellyfin client, connected on first use rather than when the service is built."""
+        if self._jellyfin_client is None:
+            self._jellyfin_client = get_client()
+        return self._jellyfin_client
+
+    @property
+    def _api(self) -> Any:
+        """The Jellyfin API wrapper of the client."""
+        return self._client.jellyfin
 
     def exec(self) -> None:
         """Evaluate rules and add the item to configured playlists."""
@@ -104,15 +114,24 @@ class PlaylistAssignmentService(ServiceBase):
         return runtime_present and has_genres and has_tags and has_year
 
     def _enrich_item_details(self) -> None:
-        """Fetch additional item metadata from Jellyfin when needed."""
-        fetch_fn = getattr(self._api, "get_item", None)
-        if not callable(fetch_fn):
-            logger.debug("Jellyfin client does not expose get_item; skipping enrichment.")
-            return
+        """Fetch additional item metadata from Jellyfin when needed.
 
+        Raises:
+            PlaylistAssignmentError: If Jellyfin could not be reached (retryable, through its
+                cause). Carrying on without the metadata would evaluate every rule against
+                missing fields and report "no rule matched" as a success.
+        """
         try:
+            fetch_fn = getattr(self._api, "get_item", None)
+            if not callable(fetch_fn):
+                logger.debug("Jellyfin client does not expose get_item; skipping enrichment.")
+                return
             fetched = fetch_fn(self.item_id)
         except Exception as exc:
+            if is_transient(exc):
+                raise PlaylistAssignmentError(
+                    f"Jellyfin was unavailable while loading item {self.item_id}"
+                ) from exc
             logger.error(
                 "Failed to load Jellyfin item {} for playlist rules: {}", self.item_id, exc
             )
@@ -235,30 +254,60 @@ class PlaylistAssignmentService(ServiceBase):
             ) from exc
         else:
             playlist_name = rule.get("playlist_name", playlist_id)
-            logger.info("Added item {} to playlist '{}'", self.item_id, playlist_name)
+            logger.info("Item {} is in playlist '{}'", self.item_id, playlist_name)
 
     def _post_playlist_items(self, playlist_id: str) -> None:
-        """Add the item to a playlist using the Jellyfin HTTP API."""
+        """Add the item to a playlist using the Jellyfin HTTP API, unless it is already there.
+
+        Adding is not idempotent (Jellyfin allows duplicate entries), and a retry or redelivery
+        re-runs every service, so membership is checked first.
+        """
         endpoint = f"Playlists/{playlist_id}/Items"
         user_id = self._get_user_id()  # Retrieve the user ID from the context or configuration
         if not user_id:
             raise PlaylistAssignmentError("User ID is required to add items to a playlist.")
 
-        request_payload = {
-            "type": "POST",
-            "handler": endpoint,
-            "params": {"Ids": self.item_id, "UserId": user_id},
-        }
-
         http_client = getattr(self._client, "http", None)
         http_request = getattr(http_client, "request", None)
-        if callable(http_request):
-            http_request(request_payload)
+        if not callable(http_request):
+            raise PlaylistAssignmentError(
+                f"Failed to send request to add item to playlist {playlist_id}"
+            )
+
+        existing = http_request({"type": "GET", "handler": endpoint, "params": {"UserId": user_id}})
+        if self._playlist_contains_item(existing):
+            logger.info("Item {} is already in playlist {}", self.item_id, playlist_id)
             return
 
-        raise PlaylistAssignmentError(
-            f"Failed to send request to add item to playlist {playlist_id}"
+        http_request(
+            {
+                "type": "POST",
+                "handler": endpoint,
+                "params": {"Ids": self.item_id, "UserId": user_id},
+            }
         )
+
+    def _playlist_contains_item(self, response: Any) -> bool:
+        """Whether a `GET Playlists/{id}/Items` response already lists the current item.
+
+        Jellyfin item ids are GUIDs that may be written with or without dashes, so they are
+        compared in a normalised form. An unexpected response counts as "not there".
+        """
+        if not isinstance(response, dict):
+            return False
+        items = response.get("Items")
+        if not isinstance(items, list):
+            return False
+        wanted = self._normalize_item_id(self.item_id)
+        return any(
+            isinstance(item, dict) and self._normalize_item_id(item.get("Id")) == wanted
+            for item in items
+        )
+
+    @staticmethod
+    def _normalize_item_id(item_id: Any) -> str:
+        """Lowercase a Jellyfin item id and drop its dashes."""
+        return str(item_id or "").replace("-", "").lower()
 
     @staticmethod
     def _extract_runtime_minutes(details: dict[str, Any]) -> float | None:

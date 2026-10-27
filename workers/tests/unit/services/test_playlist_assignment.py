@@ -2,11 +2,14 @@
 
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import pytest
 import requests
+from jellyfin_apiclient_python.exceptions import HTTPException
 
+from workers.clients.jellyfin import JellyfinUnavailableError
+from workers.errors import is_transient
 from workers.services.playlist_assignment import (
     SECONDS_PER_MINUTE,
     TICKS_PER_SECOND,
@@ -134,13 +137,22 @@ def test_exec_applies_matching_rule_posts_items() -> None:
 
     service.exec()
 
-    http.request.assert_called_once_with(
-        {
-            "type": "POST",
-            "handler": "Playlists/playlist-123/Items",
-            "params": {"Ids": "item123", "UserId": "test-user-id"},
-        }
-    )
+    assert http.request.call_args_list == [
+        call(
+            {
+                "type": "GET",
+                "handler": "Playlists/playlist-123/Items",
+                "params": {"UserId": "test-user-id"},
+            }
+        ),
+        call(
+            {
+                "type": "POST",
+                "handler": "Playlists/playlist-123/Items",
+                "params": {"Ids": "item123", "UserId": "test-user-id"},
+            }
+        ),
+    ]
 
 
 def test_exec_requires_post_helper() -> None:
@@ -423,3 +435,104 @@ def test_extract_list_field_normalizes_values() -> None:
 def test_normalize_str_iterable_handles_various_inputs() -> None:
     assert PlaylistAssignmentService._normalize_str_iterable("Movie") == {"movie"}
     assert PlaylistAssignmentService._normalize_str_iterable(123) == {"123"}
+
+
+def _playlist_listing(*item_ids: str) -> dict[str, Any]:
+    """The body Jellyfin returns for `GET Playlists/{id}/Items`."""
+    return {"Items": [{"Id": item_id} for item_id in item_ids], "TotalRecordCount": len(item_ids)}
+
+
+def _posts(http: SimpleNamespace) -> list:
+    return [c for c in http.request.call_args_list if c.args[0]["type"] == "POST"]
+
+
+def test_exec_does_not_add_an_item_already_in_the_playlist() -> None:
+    """A retry or redelivery re-runs the service; it must not add a duplicate entry."""
+    http = SimpleNamespace(request=Mock(return_value=_playlist_listing("other", "item123")))
+    service = _build_service(http=http)
+
+    service.exec()
+
+    assert _posts(http) == []
+
+
+def test_exec_matches_existing_items_regardless_of_dashes_and_case() -> None:
+    item_id = "0123456789abcdef0123456789abcdef"
+    listing = _playlist_listing("01234567-89AB-CDEF-0123-456789ABCDEF")
+    http = SimpleNamespace(request=Mock(return_value=listing))
+    service = _build_service(item_id=item_id, message={"ItemId": item_id}, http=http)
+
+    service.exec()
+
+    assert _posts(http) == []
+
+
+def test_exec_adds_the_item_when_the_playlist_does_not_contain_it() -> None:
+    http = SimpleNamespace(request=Mock(return_value=_playlist_listing("other")))
+    service = _build_service(http=http)
+
+    service.exec()
+
+    assert len(_posts(http)) == 1
+
+
+def test_exec_twice_adds_the_item_once() -> None:
+    """Simulates a retry: the second run sees the entry the first one created."""
+    playlist: list[str] = []
+
+    def request(payload: dict[str, Any]) -> dict[str, Any] | None:
+        if payload["type"] == "GET":
+            return _playlist_listing(*playlist)
+        playlist.append(payload["params"]["Ids"])
+        return None
+
+    http = SimpleNamespace(request=Mock(side_effect=request))
+    service = _build_service(http=http)
+
+    service.exec()
+    service.exec()
+
+    assert playlist == ["item123"]
+
+
+def test_enrich_item_details_raises_a_retryable_error_when_jellyfin_is_down() -> None:
+    """Carrying on without the metadata would turn an outage into "no rule matched"."""
+    unreachable = HTTPException("ServerUnreachable", requests.ConnectionError())
+    api = SimpleNamespace(get_item=Mock(side_effect=unreachable))
+    message: dict[str, Any] = {"RunTimeTicks": None, "Genres": [], "Tags": []}
+    http = SimpleNamespace(request=Mock())
+    service = _build_service(message=message, api=api, http=http)
+
+    with pytest.raises(PlaylistAssignmentError) as exc_info:
+        service.exec()
+
+    assert is_transient(exc_info.value)
+    http.request.assert_not_called()
+
+
+def test_from_message_does_not_connect_to_jellyfin() -> None:
+    with patch("workers.services.playlist_assignment.get_client") as get_client:
+        PlaylistAssignmentService.from_message({"ItemId": "abc123"}, {"rules": []})
+
+    get_client.assert_not_called()
+
+
+def test_exec_with_no_rules_needs_no_jellyfin() -> None:
+    """With nothing to do, an outage must not fail (and retry) the message."""
+    unavailable = JellyfinUnavailableError("down")
+    with patch("workers.services.playlist_assignment.get_client", side_effect=unavailable):
+        service = PlaylistAssignmentService.from_message({"ItemId": "abc123"}, {"rules": []})
+        service.exec()
+
+
+def test_exec_connects_lazily_and_a_failed_connection_is_retryable() -> None:
+    unavailable = JellyfinUnavailableError("down")
+    with patch("workers.services.playlist_assignment.get_client", side_effect=unavailable):
+        service = PlaylistAssignmentService.from_message(
+            {"ItemId": "abc123", "RunTimeTicks": None},
+            {"rules": [{"playlist_id": "p", "conditions": {}}]},
+        )
+        with pytest.raises(PlaylistAssignmentError) as exc_info:
+            service.exec()
+
+    assert is_transient(exc_info.value)

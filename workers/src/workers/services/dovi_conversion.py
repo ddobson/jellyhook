@@ -20,6 +20,8 @@ class DoviConversionError(WebhookWorkerError):
 class DoviConversionService(ServiceBase):
     """Service to convert Dolby Vision Profile 7.x to 8.x."""
 
+    movies_only = True
+
     def __init__(self, movie: Movie, tmp_dir: pathlib.Path) -> None:
         """Initialize the DoviConversionService.
 

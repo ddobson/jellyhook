@@ -144,6 +144,7 @@ Configure the application using environment variables and configuration files:
 - `RABBITMQ_HOST`: RabbitMQ hostname (default: "rabbitmq")
 - `RABBITMQ_PASS`: RabbitMQ password (default: "guest")
 - `RABBITMQ_USER`: RabbitMQ username (default: "guest")
+- `RABBITMQ_VHOST`: RabbitMQ virtual host (default: "/"). Must match the API's `RABBITMQ_VHOST`
 - `STANDUP_PATH`: Path to stand-up comedy files (default: "/data/media/stand-up")
 - `TEMP_DIR`: Directory for temporary files (default: "/data/tmp")
 - `WORKER_ENV`: Worker environment (default: "development")

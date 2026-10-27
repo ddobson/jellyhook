@@ -5,12 +5,15 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+import requests
+from jellyfin_apiclient_python.exceptions import HTTPException
 
 from workers.clients.jellyfin import JellyfinUnavailableError
 from workers.config import WorkerConfig
 from workers.errors import MediaNotFoundError, ServiceConfigurationError
 from workers.results import Outcome, ProcessingResult
 from workers.services.dovi_conversion import DoviConversionService
+from workers.services.metadata_update import MetadataUpdateError
 from workers.services.orchestrator import ServiceOrchestrator, process_webhook_message
 from workers.services.playlist_assignment import PlaylistAssignmentError
 from workers.services.service_base import ServiceBase
@@ -747,3 +750,43 @@ def test_process_webhook_does_not_track_a_temp_dir_for_services_without_one(orch
 
     assert result == ProcessingResult.success()
     assert orchestrator.temp_dirs == set()
+
+
+@pytest.mark.parametrize("item_type", ["Episode", "Series", "Season", "Audio"])
+def test_process_webhook_skips_file_services_for_non_movie_items(orchestrator, item_type):
+    """A TV episode or song is never under MEDIA_PATHS: skip it, don't retry until dead."""
+    _enable_services(orchestrator, ["metadata_update", "dovi_conversion", "media_track_clean"])
+    message = {"Name": "Pilot", "Year": 2023, "ItemType": item_type, "ItemId": "1"}
+
+    with mock.patch.object(
+        ServiceBase, "file_from_message", side_effect=MediaNotFoundError("No video")
+    ) as file_from_message:
+        result = orchestrator.process_webhook(message)
+
+    assert result.outcome is Outcome.SUCCESS
+    file_from_message.assert_not_called()
+
+
+def _jellyfin_unreachable() -> MetadataUpdateError:
+    """The error metadata_update raises when Jellyfin is down, chained as the client does it."""
+    try:
+        try:
+            raise requests.ConnectionError("connection refused")
+        except requests.ConnectionError as network_error:
+            raise HTTPException("ServerUnreachable", network_error)  # noqa: B904
+    except HTTPException as client_error:
+        try:
+            raise MetadataUpdateError("Failed to update metadata") from client_error
+        except MetadataUpdateError as wrapped:
+            return wrapped
+
+
+def test_process_webhook_retries_metadata_update_when_jellyfin_is_down(orchestrator):
+    """The update must be retried, not swallowed as a best-effort failure and acked."""
+    _enable_services(orchestrator, ["metadata_update"])
+    service = _failing_service(_jellyfin_unreachable())
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.RETRY

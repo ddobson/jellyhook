@@ -97,7 +97,8 @@ retryable failure is attempted at roughly 0, 1, 2, 3 and 4 minutes before it is 
 files regularly take longer than that to land, raise the setting: each extra attempt adds a minute.
 
 The attempt count travels with the message in the `x-jellyhook-attempts` header, and the reason for
-the last failure in `x-jellyhook-failure-reason`.
+the last failure in `x-jellyhook-failure-reason`. A header that is not a usable count (say, edited
+by hand when replaying a dead letter) is logged and treated as no earlier attempts.
 
 ## Worked example: a burst of five new items
 

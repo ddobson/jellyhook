@@ -2,6 +2,7 @@ import json
 import pathlib
 
 from workers import utils
+from workers.movie import Movie
 from workers.services.media_track_clean import MediaTrackCleanService
 
 
@@ -32,6 +33,7 @@ def test_keep_only_english_tracks(
         "0:0",
         "0:1",
         "0:5",
+        "0:t?",
     ]
     assert [kind for kind, _ in _streams(path)] == ["video", "audio", "subtitle"]
     assert {lang for kind, lang in _streams(path) if kind != "video"} == {"eng"}
@@ -47,7 +49,7 @@ def test_keep_multiple_languages(multitrack_service_multi_langs, track_clean_com
 
     ffmpeg_cmd = track_clean_command_mock.call_args_list[1].args[0]
     mapped = [ffmpeg_cmd[i + 1] for i, part in enumerate(ffmpeg_cmd) if part == "-map"]
-    assert mapped == ["0:0", "0:1", "0:2", "0:3", "0:5", "0:7"]
+    assert mapped == ["0:0", "0:1", "0:2", "0:3", "0:5", "0:7", "0:t?"]
     audio = {lang for kind, lang in _streams(path) if kind == "audio"}
     subs = {lang for kind, lang in _streams(path) if kind == "subtitle"}
     assert audio == {"eng", "spa", "deu"}
@@ -90,3 +92,38 @@ def test_skip_processing_if_all_streams_kept(multitrack_movie, track_clean_comma
 
     assert track_clean_command_mock.call_count == 1  # ffprobe only
     assert path.read_bytes() == before
+
+
+def test_cleaning_keeps_attachments(temp_dir):
+    """Fonts attached to an MKV (needed by styled subtitles) survive removing a track."""
+    font = temp_dir / "font.ttf"
+    font.write_bytes(b"not really a font, but ffmpeg only copies the bytes")
+    movie_dir = temp_dir / "Attachment Test (2025)"
+    movie_dir.mkdir()
+    path = movie_dir / "Attachment Test (2025).mkv"
+    # One second of video plus an English and a Spanish audio track, and a font attachment
+    utils.run_command(
+        [
+            "ffmpeg", "-nostdin", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=5",
+            "-f", "lavfi", "-i", "sine=duration=1",
+            "-f", "lavfi", "-i", "sine=duration=1",
+            "-map", "0", "-map", "1", "-map", "2",
+            "-c:v", "mpeg4", "-c:a", "aac",
+            "-metadata:s:a:0", "language=eng", "-metadata:s:a:1", "language=spa",
+            "-attach", str(font), "-metadata:s:t", "mimetype=application/x-truetype-font",
+            str(path),
+        ]
+    )  # fmt: skip
+    assert [kind for kind, _ in _streams(str(path))] == ["video", "audio", "audio", "attachment"]
+    service = MediaTrackCleanService(
+        Movie.from_file(path),
+        keep_original=False,
+        keep_default=False,
+        keep_audio_langs=["eng"],
+        temp_dir=str(temp_dir / "scratch"),
+    )
+
+    service.exec()
+
+    assert _streams(str(path)) == [("video", "und"), ("audio", "eng"), ("attachment", "und")]
