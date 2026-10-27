@@ -303,6 +303,23 @@ def test_enrich_item_details_handles_fetch_failure() -> None:
     assert get_item.call_count == 1
 
 
+def test_enrich_item_details_ignores_a_non_mapping_response() -> None:
+    get_item = Mock(return_value=["not", "a", "mapping"])
+    api = SimpleNamespace(get_item=get_item)
+    message: dict[str, Any] = {
+        "RunTimeTicks": None,
+        "Genres": [],
+        "Tags": [],
+        "ProductionYear": None,
+    }
+    service = _build_service(message=message, api=api)
+
+    details = service._load_item_details()
+
+    assert details["RunTimeTicks"] is None
+    assert get_item.call_count == 1
+
+
 def test_rule_matches_requires_mapping_conditions() -> None:
     service = _build_service()
     details = service._load_item_details()

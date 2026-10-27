@@ -161,3 +161,8 @@ def test_publish_error_when_the_handshake_stalls(app):
         pytest.raises(PublishError, match="handshake"),
     ):
         app.extensions["rabbitmq"].publish(queue="q", body="b")
+
+
+def test_connect_requires_an_initialised_app() -> None:
+    with pytest.raises(RuntimeError, match="init_app"):
+        RabbitMQ().connect()

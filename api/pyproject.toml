@@ -35,3 +35,7 @@ markers = ["integration: needs Docker; runs against a real RabbitMQ (not part of
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/api"]
+
+[tool.coverage.report]
+# Imports used only by the type checker never run
+exclude_also = ["if TYPE_CHECKING:"]

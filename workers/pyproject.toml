@@ -44,3 +44,7 @@ markers = [
     "component: mark test as a component test",
     "integration: needs Docker; runs against a real RabbitMQ (not part of the default run)",
 ]
+
+[tool.coverage.report]
+# Imports used only by the type checker never run
+exclude_also = ["if TYPE_CHECKING:"]
