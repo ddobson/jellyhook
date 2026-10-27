@@ -141,3 +141,31 @@ def test_kill_process_group_falls_back_to_killing_the_process():
         utils._kill_process_group(process)
 
     process.kill.assert_called_once()
+
+
+def test_run_command_returns_all_output_when_a_grandchild_holds_the_pipe(tmp_path):
+    """A background process keeping stdout open must not make us return half the output."""
+    script = _script(tmp_path, "(sleep 30 &)\nfor i in $(seq 1 2000); do echo line$i; done")
+
+    started = time.monotonic()
+    result = utils.run_command([script], timeout=60)
+
+    assert result.stdout.splitlines()[-1] == "line2000"
+    assert len(result.stdout.splitlines()) == 2000
+    assert time.monotonic() - started < 15  # the stray `sleep` was killed, not waited for
+
+
+def test_run_command_raises_rather_than_return_truncated_output():
+    """If a reader will not finish even after the group is killed, say so."""
+    stuck = mock.MagicMock()
+    stuck.is_alive.return_value = True
+    process = mock.MagicMock()
+
+    with (
+        mock.patch.object(utils, "PIPE_DRAIN_SECONDS", 0),
+        mock.patch.object(utils, "_kill_process_group") as kill,
+        pytest.raises(RuntimeError, match="all of the command's output"),
+    ):
+        utils._finish_readers(process, [stuck])
+
+    kill.assert_called_once_with(process)

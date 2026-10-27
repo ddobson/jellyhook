@@ -95,7 +95,9 @@ are easy to break by accident.
   `raise ... from exc` chains, so always keep the `from exc` when a service wraps an error.
   Anything else (including other 4xx) is permanent and goes straight to `<queue>.dead`. An unknown or unimportable service raises `ServiceConfigurationError`
   and fails the message; do not turn it into a silent skip.
-- **`metadata_update` failures never fail a message.** Other services' failures do.
+- **`metadata_update` is best-effort, except for transient failures.** A permanent failure there
+  never fails a message; a transient one (Jellyfin down) does, so the update is retried rather than
+  lost. Other services' failures always do.
 - **pika's `BlockingConnection` is not thread-safe.** Only the thread that runs
   `QueueConsumer.run()` may touch the connection or channel. Job threads hand results back through
   `add_callback_threadsafe`. Do not call pika from services.

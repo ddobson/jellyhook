@@ -14,6 +14,7 @@ import errno
 import os
 import pathlib
 import shutil
+import stat
 import tempfile
 import threading
 import uuid
@@ -38,6 +39,9 @@ def replace_file(source: pathlib.Path, target: pathlib.Path) -> None:
     Raises:
         OSError: If the replacement could not be completed. `target` is left as it was.
     """
+    # The new file is owned by whoever ran the tool (root, in the container) with that process's
+    # umask. Give it the original's mode and owner so Jellyfin can still read it.
+    _match_permissions(target, source)
     try:
         os.replace(source, target)
         return
@@ -49,7 +53,7 @@ def replace_file(source: pathlib.Path, target: pathlib.Path) -> None:
     staged = target.with_name(f".{target.name}.{uuid.uuid4().hex}.jellyhook-tmp")
     try:
         shutil.copyfile(source, staged)
-        shutil.copystat(target, staged)  # keep the original's mode and times where possible
+        _match_permissions(target, staged)
         with staged.open("rb") as f:
             os.fsync(f.fileno())
         os.replace(staged, target)
@@ -57,6 +61,49 @@ def replace_file(source: pathlib.Path, target: pathlib.Path) -> None:
         staged.unlink(missing_ok=True)
         raise
     source.unlink(missing_ok=True)
+
+
+def _match_permissions(reference: pathlib.Path, path: pathlib.Path) -> None:
+    """Copy `reference`'s mode and owner onto `path`, as far as we are allowed to.
+
+    Modification times are deliberately not copied: the content changed, so the file should look
+    changed to Jellyfin's scanner.
+
+    Args:
+        reference (pathlib.Path): The file to copy from. Nothing happens if it does not exist.
+        path (pathlib.Path): The file to adjust.
+    """
+    try:
+        info = reference.stat()
+    except FileNotFoundError:
+        return
+    try:
+        os.chown(path, info.st_uid, info.st_gid)
+    except PermissionError:  # not root and not the owner: keep what we have
+        logger.warning(f"Could not set the owner of {path} to match {reference}")
+    os.chmod(path, stat.S_IMODE(info.st_mode))  # after chown, which can clear setuid bits
+
+
+def _job_dir_name(label: str) -> str:
+    """A filesystem-safe, unique directory name for a job."""
+    safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in label)[:40]
+    return f"{safe_label}-{uuid.uuid4().hex}"
+
+
+def job_dir_path(base: str | os.PathLike[str], label: str) -> pathlib.Path:
+    """Choose a unique scratch directory path without creating it.
+
+    For services that should only touch the disk if they actually run. Removing a path that was
+    never created is harmless, so it can be registered for cleanup up front.
+
+    Args:
+        base (str | os.PathLike[str]): The configured temp directory.
+        label (str): A short human hint for the directory name.
+
+    Returns:
+        pathlib.Path: A path inside `base` that does not exist yet.
+    """
+    return pathlib.Path(base) / _job_dir_name(label)
 
 
 def make_job_dir(base: str | os.PathLike[str], label: str) -> pathlib.Path:

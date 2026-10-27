@@ -14,6 +14,10 @@ from workers.logger import logger
 # slot (and eventually the broker's consumer_timeout) forever.
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 6 * 60 * 60
 
+# How long to wait for output still in flight once the process has exited. The readers run
+# alongside the process, so only what fits in a pipe buffer (about 64 KB) is left by then.
+PIPE_DRAIN_SECONDS = 5
+
 
 class SingletonMeta(type):
     """A thread-safe implementation of Singleton."""
@@ -75,6 +79,31 @@ def _kill_process_group(process: subprocess.Popen[str]) -> None:
         os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
         process.kill()
+
+
+def _finish_readers(process: subprocess.Popen[str], readers: list[threading.Thread]) -> None:
+    """Wait for the pipe readers to reach EOF, so the captured output is complete.
+
+    The readers normally finish as soon as the process exits. If one is still going, something the
+    process started (a grandchild) is holding the pipe open: kill the process group to close it.
+
+    Raises:
+        RuntimeError: If a reader still has not finished, since the output would be incomplete.
+    """
+    if _join_all(readers, PIPE_DRAIN_SECONDS):
+        return
+    logger.warning("Output pipe still open after the process exited; killing its process group")
+    _kill_process_group(process)
+    if not _join_all(readers, PIPE_DRAIN_SECONDS):
+        raise RuntimeError("Could not read all of the command's output")
+
+
+def _join_all(threads: list[threading.Thread], seconds: float) -> bool:
+    """Join threads within one shared deadline. Returns True if all of them finished."""
+    deadline = time.monotonic() + seconds
+    for thread in threads:
+        thread.join(timeout=max(0.0, deadline - time.monotonic()))
+    return not any(thread.is_alive() for thread in threads)
 
 
 def run_command(
@@ -150,9 +179,7 @@ def run_command(
         process.wait()
         raise
     finally:
-        # The readers end when the pipes close; don't wait forever if a grandchild keeps one open
-        for reader in readers:
-            reader.join(timeout=5)
+        _finish_readers(process, readers)
 
     output = "\n".join(stdout_lines)
     stderr = "\n".join(stderr_lines)

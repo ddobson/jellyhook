@@ -271,6 +271,8 @@ These are properties of the current design, worth keeping in mind when reading t
     version, and that has not been checked.
 - **At-least-once, not exactly-once.** After a crash or disconnect the same event can be processed
   twice.
+- **`metadata_update` and outages.** Its permanent failures are logged and ignored, but if
+  Jellyfin is unreachable the message is retried like any other.
 - **Abandoned conversions and cleans.** A job cut off mid-way (shutdown past the grace period, a
   broker restart) is redelivered and starts again from the beginning. That is now harmless to the
   library:

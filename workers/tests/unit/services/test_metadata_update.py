@@ -463,3 +463,25 @@ def test_end_to_end_pattern_match(
         "123456",
         {"Genres": ["Comedy", "Documentary", "Live Performance"]},
     )
+
+
+def test_update_metadata_lets_a_jellyfin_outage_propagate(mock_movie_standup):
+    """get_client() failing must surface as the retryable error, not a MetadataUpdateError."""
+    from workers.clients.jellyfin import JellyfinUnavailableError
+    from workers.errors import is_transient
+
+    service = MetadataUpdateService(
+        movie=mock_movie_standup, item_id="123456", original_genres=["Comedy"]
+    )
+    service.matching_rules = [{"genres": {"new_genres": ["Stand-Up"], "replace_existing": True}}]
+
+    with (
+        mock.patch(
+            "workers.services.metadata_update.get_client",
+            side_effect=JellyfinUnavailableError("down"),
+        ),
+        pytest.raises(JellyfinUnavailableError) as excinfo,
+    ):
+        service.update_metadata()
+
+    assert is_transient(excinfo.value)

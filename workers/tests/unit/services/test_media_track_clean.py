@@ -131,9 +131,11 @@ def test_media_track_clean_service_init(mock_movie, tmp_path):
     assert service.config.keep_default is True
     assert service.config.keep_audio_langs == ["eng"]
     assert service.config.keep_sub_langs == ["eng", "spa"]
-    # Each run gets its own scratch directory inside the configured one
+    # Each run gets its own scratch path inside the configured one, but nothing is created
+    # until the service actually runs
     assert service.tmp_dir.parent == tmp_path
-    assert service.tmp_dir.is_dir()
+    assert not service.tmp_dir.exists()
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_media_track_clean_service_scratch_dirs_are_unique(mock_movie, tmp_path):
@@ -400,3 +402,25 @@ def test_evaluate_streams_applies_each_keep_rule(mock_movie, tmp_path):
     kept = [s.index for s in service._evaluate_streams(streams)]
 
     assert kept == [0, 1, 2, 3, 4]  # only the German subtitle goes
+
+
+@patch("workers.services.media_track_clean.run_command")
+def test_skipping_leaves_no_scratch_directory_behind(
+    mock_run_command, mock_movie, mock_ffprobe_output, tmp_path
+):
+    """A run with nothing to remove must not litter TEMP_DIR."""
+    movie_file = tmp_path / "movie.mkv"
+    movie_file.write_bytes(b"x")
+    mock_movie.full_path = str(movie_file)
+    mock_run_command.return_value = MagicMock(stdout=json.dumps(mock_ffprobe_output))
+    scratch = tmp_path / "scratch"
+    service = MediaTrackCleanService(
+        mock_movie,
+        keep_audio_langs=["eng", "spa"],
+        keep_sub_langs=["eng"],
+        temp_dir=str(scratch),
+    )
+
+    service.exec()
+
+    assert not scratch.exists()

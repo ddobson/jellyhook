@@ -3,6 +3,7 @@ import os
 import pathlib
 import threading
 import time
+from unittest import mock
 
 import pytest
 
@@ -33,6 +34,79 @@ def _force_cross_device(monkeypatch, fail_times: int = 1):
         real_replace(src, dst)
 
     monkeypatch.setattr(fileops.os, "replace", fake_replace)
+
+
+def test_replace_file_keeps_the_originals_mode(tmp_path):
+    """A 0644 library file must not become the 0600 scratch file."""
+    target = tmp_path / "movie.mkv"
+    target.write_bytes(b"original")
+    target.chmod(0o644)
+    source = tmp_path / "new.mkv"
+    source.write_bytes(b"replacement")
+    source.chmod(0o600)
+
+    fileops.replace_file(source, target)
+
+    assert target.stat().st_mode & 0o777 == 0o644
+
+
+def test_replace_file_asks_for_the_originals_owner(tmp_path):
+    target = tmp_path / "movie.mkv"
+    target.write_bytes(b"original")
+    source = tmp_path / "new.mkv"
+    source.write_bytes(b"replacement")
+    info = target.stat()
+
+    with mock.patch.object(fileops.os, "chown") as chown:
+        fileops.replace_file(source, target)
+
+    chown.assert_called_once_with(source, info.st_uid, info.st_gid)
+
+
+def test_replace_file_carries_on_when_it_may_not_chown(tmp_path):
+    """Not running as root: ownership stays as is, the swap still happens."""
+    target = tmp_path / "movie.mkv"
+    target.write_bytes(b"original")
+    source = tmp_path / "new.mkv"
+    source.write_bytes(b"replacement")
+
+    with mock.patch.object(fileops.os, "chown", side_effect=PermissionError):
+        fileops.replace_file(source, target)
+
+    assert target.read_bytes() == b"replacement"
+
+
+def test_replace_file_keeps_the_originals_mode_across_filesystems(tmp_path, monkeypatch):
+    target = tmp_path / "movie.mkv"
+    target.write_bytes(b"original")
+    target.chmod(0o640)
+    source = tmp_path / "new.mkv"
+    source.write_bytes(b"replacement")
+    source.chmod(0o600)
+    _force_cross_device(monkeypatch)
+
+    fileops.replace_file(source, target)
+
+    assert target.read_bytes() == b"replacement"
+    assert target.stat().st_mode & 0o777 == 0o640
+
+
+def test_replace_file_copes_with_a_target_that_does_not_exist_yet(tmp_path):
+    source = tmp_path / "new.mkv"
+    source.write_bytes(b"replacement")
+
+    fileops.replace_file(source, tmp_path / "brand_new.mkv")
+
+    assert (tmp_path / "brand_new.mkv").read_bytes() == b"replacement"
+
+
+def test_job_dir_path_is_unique_and_not_created(tmp_path):
+    first = fileops.job_dir_path(tmp_path, "Item A")
+    second = fileops.job_dir_path(tmp_path, "Item A")
+
+    assert first != second
+    assert first.parent == tmp_path
+    assert not first.exists()
 
 
 def test_replace_file_copies_across_filesystems_then_swaps(tmp_path, monkeypatch):
@@ -159,3 +233,22 @@ def test_media_file_lock_releases_on_error(tmp_path):
 
     with fileops.media_file_lock(movie):  # would hang if the lock leaked
         pass
+
+
+def test_replace_file_does_not_fall_back_for_other_rename_errors(tmp_path, monkeypatch):
+    """Only EXDEV means "different filesystem"; anything else is a real failure."""
+    target = tmp_path / "movie.mkv"
+    target.write_bytes(b"original")
+    source = tmp_path / "new.mkv"
+    source.write_bytes(b"replacement")
+
+    def denied(src, dst):
+        raise OSError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(fileops.os, "replace", denied)
+
+    with pytest.raises(OSError, match="Permission denied"):
+        fileops.replace_file(source, target)
+
+    assert target.read_bytes() == b"original"
+    assert [p.name for p in tmp_path.iterdir() if "jellyhook-tmp" in p.name] == []

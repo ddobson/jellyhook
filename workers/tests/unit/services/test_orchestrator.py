@@ -6,6 +6,7 @@ from unittest import mock
 
 import pytest
 
+from workers.clients.jellyfin import JellyfinUnavailableError
 from workers.config import WorkerConfig
 from workers.errors import MediaNotFoundError, ServiceConfigurationError
 from workers.results import Outcome, ProcessingResult
@@ -644,15 +645,34 @@ def test_process_webhook_mixed_failures_retry(orchestrator):
     assert "media_track_clean: TimeoutError" in result.reason
 
 
-def test_process_webhook_metadata_failure_alone_still_succeeds(orchestrator):
-    """Existing behavior: metadata_update failures never fail the message."""
+def test_process_webhook_permanent_metadata_failure_alone_still_succeeds(orchestrator):
+    """metadata_update is best-effort: a permanent failure never fails the message."""
     _enable_services(orchestrator, ["metadata_update"])
-    service = _failing_service(ConnectionError("Jellyfin unreachable"))
+    service = _failing_service(ValueError("bad rule"))
 
     with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
         result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
 
     assert result == ProcessingResult.success()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        JellyfinUnavailableError("Jellyfin did not sign us in"),
+        ConnectionError("Jellyfin unreachable"),
+    ],
+)
+def test_process_webhook_transient_metadata_failure_is_retried_not_dropped(orchestrator, error):
+    """A Jellyfin outage during metadata_update must not be acked as a success."""
+    _enable_services(orchestrator, ["metadata_update"])
+    service = _failing_service(error)
+
+    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
+
+    assert result.outcome is Outcome.RETRY
+    assert "metadata_update" in result.reason
 
 
 def test_process_webhook_message_rejects_non_object_body():

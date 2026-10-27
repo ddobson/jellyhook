@@ -42,7 +42,8 @@ class MediaTrackCleanService(ServiceBase):
             keep_audio_langs=keep_audio_langs or [],
             keep_sub_langs=keep_sub_langs or [],
         )
-        self.tmp_dir = fileops.make_job_dir(temp_dir, "media_track_clean")
+        # Only a path for now; the directory is created in exec(), if there is work to do
+        self.tmp_dir = fileops.job_dir_path(temp_dir, "media_track_clean")
         logger.info(
             f"Initialized MediaTrackCleanService for {movie.full_title} with config: "
             f"keep_original={keep_original}, keep_default={keep_default}, "
@@ -74,7 +75,7 @@ class MediaTrackCleanService(ServiceBase):
             )
             return
 
-        # Create output file name
+        self.tmp_dir.mkdir(parents=True, exist_ok=True)
         output_file = self._create_output_file_path()
 
         # Generate and execute ffmpeg command to remove unwanted tracks

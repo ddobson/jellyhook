@@ -168,10 +168,10 @@ class ServiceOrchestrator:
             except Exception as e:
                 logger.error(f"Service {service_name} failed: {e}")
 
-                # Only mark the webhook as failed if this is a critical service
-                # In this implementation, we're keeping the existing behavior where
-                # metadata failures don't fail the entire process
-                if service_name != "metadata_update":
+                # metadata_update is best-effort: a permanent failure there (a bad rule, a
+                # rejected update) never fails the message. A transient one (Jellyfin down) does,
+                # otherwise the update would be lost and the message acked as a success.
+                if service_name != "metadata_update" or is_transient(e):
                     failures.append((str(service_name), e))
 
         return self._summarize_failures(failures)
