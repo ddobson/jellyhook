@@ -78,6 +78,9 @@ message is redelivered, so keep the container's `stop_grace_period` above that v
 | `WORKER_SHUTDOWN_GRACE_SECONDS` | `45` | How long in-flight jobs may finish after `SIGTERM` |
 | `RABBITMQ_HEARTBEAT` | `60` | AMQP heartbeat interval in seconds |
 
+For a walkthrough with worked examples, see
+[How the Worker Consumes Messages](../docs/message-consumption.md).
+
 The retry delay (60 seconds) is part of the `<queue>.retry` declaration. To change it, delete
 that queue first or RabbitMQ rejects the redeclare.
 
