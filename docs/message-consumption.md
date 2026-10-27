@@ -289,8 +289,10 @@ These are properties of the current design, worth keeping in mind when reading t
     during a Dolby Vision conversion). If the media library also needs room for the staged copy
     during the swap, that is another full copy on that disk.
 - **A 202 from the API means RabbitMQ confirmed the message**, and it is stored as persistent, so
-  events waiting in the queue survive a broker restart (the queue data lives in the
-  `rabbitmq_data` volume). If the broker cannot be reached the API answers 503 with `Retry-After`
+  events waiting in the queue survive a broker restart or a hard kill (the queue data lives in
+  the `rabbitmq_data` volume). One narrow exception: a queue created within moments of an unclean
+  crash can be lost with its contents, because the broker writes queue declarations lazily. See
+  `docs/testing.md`. If the broker cannot be reached the API answers 503 with `Retry-After`
   instead. Whether Jellyfin's webhook plugin retries after a 503 has not been checked, so a webhook
   sent while RabbitMQ is down may still be lost on the Jellyfin side.
 - **The retry delay is fixed.** It is part of the `.retry` queue's declaration. To change it, delete

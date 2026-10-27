@@ -96,12 +96,14 @@ def test_open_connection_sets_heartbeat_and_timeouts():
         mock.patch.object(rabbitmq, "BlockingConnection") as blocking_connection,
         mock.patch.object(rabbitmq.pika, "ConnectionParameters") as parameters,
         mock.patch.object(rabbitmq.config, "RABBITMQ_HOST", "broker"),
+        mock.patch.object(rabbitmq.config, "RABBITMQ_PORT", 5999),
         mock.patch.object(rabbitmq.config, "RABBITMQ_HEARTBEAT", 30),
     ):
         result = rabbitmq.open_connection()
 
     kwargs = parameters.call_args.kwargs
     assert kwargs["host"] == "broker"
+    assert kwargs["port"] == 5999
     assert kwargs["heartbeat"] == 30
     assert kwargs["socket_timeout"] == 10
     assert kwargs["connection_attempts"] == 3

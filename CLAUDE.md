@@ -35,7 +35,7 @@ jellyhook/
 │   ├── src/api/          # API source code
 │   │   ├── hooks/        # Webhook handlers
 │   │   └── ...          
-│   └── tests/            # API tests
+│   └── tests/            # API tests (integration/ needs Docker)
 ├── workers/              # Worker service
 │   ├── src/workers/      # Worker source code
 │   │   ├── clients/      # Jellyfin client and RabbitMQ consumption (see below)
@@ -46,7 +46,8 @@ jellyhook/
 │   │   ├── supervisor.py # Runs consumers; exits non-zero if one stops
 │   │   └── ...
 │   └── tests/            # Worker tests
-│       ├── component/    # Component/integration tests (need the media tools)
+│       ├── component/    # Run the real media tools on real files
+│       ├── integration/  # Run against a real RabbitMQ in Docker (not in the default run)
 │       └── unit/         # Unit tests
 ├── rabbitmq/             # Broker config mounted by docker-compose.yaml
 ├── docker-compose.yaml   # Development stack (not a production deployment)
@@ -185,10 +186,27 @@ These commands are useful for running tasks against both main components at once
 - Run tests with coverage: `make test_cov`
 - Run single test: `cd api|workers && uv run --active pytest tests/path/to/test_file.py::test_function_name`
 - Run component tests: `make test_component`
+- Run integration tests (real RabbitMQ, needs Docker): `make test_integration`, or
+  `cd api|workers && uv run --active pytest -m integration tests/integration`
 - Format code: `make format`
 - Lint code: `make lint`
 - Type checking: `make typecheck`
 - Run all checks: `make all`
+
+## Testing layers
+
+Full description, with what each layer proves and does not: `docs/testing.md`.
+
+- **Unit** (`tests/unit`, API `tests`): mocks at the edges. Default run and CI.
+- **Component** (`workers/tests/component`): real ffprobe, mkvmerge and dovi_tool on real files.
+- **Integration** (`*/tests/integration`): a real RabbitMQ container driven through the `docker`
+  CLI, including real SIGTERM/SIGKILL of worker processes and broker stop/kill/restart. Excluded
+  from the default run by `-m "not integration"`; `JELLYHOOK_IT_REQUIRED=1` turns a missing Docker
+  from a skip into a failure. The two packages each carry their own copy of
+  `tests/integration/support.py` on purpose, because they must not import from each other.
+
+When you change delivery behavior (acks, retries, topology, publishing, signals), add or update an
+integration test as well as a unit test, and check the new test fails when the behavior is broken.
 
 ## Code Style Guidelines
 - Python version: 3.13+

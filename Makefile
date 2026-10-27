@@ -1,4 +1,4 @@
-.PHONY: lint format format-check typecheck test build tag push
+.PHONY: lint format format-check typecheck test test_integration build tag push
 
 lint:
 	@echo "Running linting for api and workers directories..."
@@ -36,6 +36,15 @@ test:
 		echo "Testing $${dir}..."; \
 		cd $${dir} && uv run --active pytest && cd ..; \
 	done
+
+# Starts a throwaway RabbitMQ container per package, so Docker must be running. Fails (rather than
+# skips) when it is not: asking for the integration tests and silently getting none would be worse.
+test_integration:
+	@echo "Running integration tests (needs Docker)..."
+	@status=0; for dir in api workers; do \
+		echo "Integration testing $${dir}..."; \
+		(cd $${dir} && JELLYHOOK_IT_REQUIRED=1 uv run --active pytest -m integration tests/integration) || status=1; \
+	done; exit $$status
 
 test_cov: REPORT ?= html
 test_cov:
