@@ -50,6 +50,7 @@ services:
       FLASK_APP: api/main.py
       FLASK_ENV: development
       SECRET_KEY: "SuperSecretKey"
+      # WEBHOOK_TOKEN: ""  # set to require "Authorization: Bearer <token>" on /hooks/*
     command: flask --app api.main --debug run --host=0.0.0.0 --port=5001
     # The image's own healthcheck targets gunicorn on :8000. This override targets the dev server.
     healthcheck:

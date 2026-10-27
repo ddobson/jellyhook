@@ -19,7 +19,12 @@ class Config:
     RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
     RABBITMQ_USER = os.getenv("RABBITMQ_USER", "guest")
     RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "guest")
+    RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5672"))
     RABBITMQ_VHOST = os.getenv("RABBITMQ_VHOST", "/")
+    # When set, /hooks/* requires "Authorization: Bearer <token>". Unset leaves them open.
+    WEBHOOK_TOKEN = os.getenv("WEBHOOK_TOKEN")
+    # Webhook payloads are small; refuse anything bigger than 1 MiB (HTTP 413)
+    MAX_CONTENT_LENGTH = 1024 * 1024
 
     @staticmethod
     def init_app(app: Flask) -> None:

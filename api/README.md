@@ -48,9 +48,31 @@ These are the names `api/config.py` actually reads. Using any other name (for ex
 - `RABBITMQ_HOST`: RabbitMQ server hostname (default `rabbitmq`)
 - `RABBITMQ_USER`: RabbitMQ username (default `guest`)
 - `RABBITMQ_PASS`: RabbitMQ password (default `guest`)
+- `RABBITMQ_PORT`: RabbitMQ port (default `5672`)
 - `RABBITMQ_VHOST`: RabbitMQ virtual host
+- `WEBHOOK_TOKEN`: optional shared secret. When set, `/hooks/*` requires
+  `Authorization: Bearer <token>`; `/health` stays open. Unset means no authentication, and the
+  API logs a warning at startup.
 
-The RabbitMQ port is not configurable through the environment; it is always 5672.
+### Responses
+
+| Status | When |
+|---|---|
+| 202 | The message was confirmed by RabbitMQ and stored persistently |
+| 400 | The body is not a JSON object (any Content-Type is accepted if the body parses) |
+| 401 | `WEBHOOK_TOKEN` is set and the `Authorization` header is missing or wrong |
+| 413 | The body is larger than 1 MiB |
+| 503 | RabbitMQ could not be reached or did not confirm. `Retry-After: 5` is set |
+| 500 | Anything unexpected. The message is generic; details are in the log |
+
+Each publish opens its own connection (3 attempts, 1 second apart, 5 second socket timeout), so a
+broker that is down is reported in a few seconds rather than hanging the request.
+
+### Securing the webhook
+
+Set `WEBHOOK_TOKEN` on the API, then add a request header in the Jellyfin webhook plugin's generic
+destination: name `Authorization`, value `Bearer <the same token>`. Use HTTPS, or keep the API on a
+private network, since the token travels in a header.
 
 ### Testing
 

@@ -143,6 +143,16 @@ Worker settings (defaults in `workers/src/workers/config/constants.py`):
 The API reads `RABBITMQ_USER` / `RABBITMQ_PASS` (not `*_USERNAME` / `*_PASSWORD`; unrecognised names
 silently fall back to guest/guest).
 
+API rules that are easy to break:
+
+- **202 means queued.** The API publishes with publisher confirms and persistent delivery mode on a
+  connection per request, and returns 503 with `Retry-After` if RabbitMQ does not confirm. Do not
+  swallow `PublishError` or return 202 before `publish()` returns.
+- **Errors keep their status.** `api/errors.py` maps `HTTPException` to its own code (400, 401, 404,
+  405, 413) and only unexpected exceptions to 500. Use `abort(400, ...)` for client mistakes.
+- **Declare the queue exactly as the worker does** (durable, no arguments), or the second declare
+  fails with `PRECONDITION_FAILED`.
+
 ## Docker & Compose
 
 - `docker-compose.yaml` is a **development** stack: Flask debug server, source bind mounts, and
@@ -211,7 +221,5 @@ Things that will trip you up, so you do not mistake them for something you broke
   correctly targets 3.13. pika and debugpy also have no type stubs. `make typecheck` ends with
   `|| true`, so it never fails the build; compare error counts before and after a change rather
   than expecting zero.
-- `api/tests/conftest.py` sets `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD`, which the API ignores.
-- The API publishes messages without persistence or publisher confirms, so events still waiting in
-  the queue are lost if the broker restarts.
-- The webhook endpoints have no authentication.
+- `/hooks/*` has no authentication unless `WEBHOOK_TOKEN` is set. It is optional so existing
+  Jellyfin webhook setups keep working; the API logs a warning at startup when it is unset.

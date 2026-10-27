@@ -1,26 +1,44 @@
-from collections.abc import Generator
-from contextlib import contextmanager
+"""Publishing to RabbitMQ from Flask.
+
+Every publish uses its own short-lived connection and waits for the broker to confirm it. At
+webhook volumes (a burst when a library scan finishes) a connection per request costs a few
+milliseconds, and in exchange there is no cached connection to go stale after a broker restart
+and nothing to leak when a request fails half way.
+
+Two settings make "202 Accepted" mean the event is safe:
+
+- **Publisher confirms**: `basic_publish` does not return until the broker has taken
+  responsibility for the message, and raises if it cannot route or refuses it.
+  https://www.rabbitmq.com/docs/confirms#publisher-confirms
+- **Persistent delivery mode**: the message is written to disk, so a broker restart does not lose
+  it while it waits in the (durable) queue.
+  https://www.rabbitmq.com/docs/persistence-conf
+"""
+
+import contextlib
 
 import pika
-from flask import Flask, current_app, g
+from flask import Flask
+from pika.exceptions import AMQPError
+
+
+class PublishError(Exception):
+    """The message could not be handed to RabbitMQ (unreachable, refused or unroutable)."""
 
 
 class RabbitMQ:
-    """RabbitMQ connection manager for Flask applications."""
+    """RabbitMQ publisher for Flask applications."""
 
     app: Flask | None = None
 
     def __init__(self, app: Flask | None = None) -> None:
-        """Initialize the RabbitMQ connection manager."""
+        """Initialize the RabbitMQ publisher."""
         self.app = app
         if app is not None:
             self.init_app(app)
 
     def init_app(self, app: Flask) -> None:
-        """Initialize the RabbitMQ connection manager with the Flask app.
-
-        This method sets up the RabbitMQ connection parameters and adds a teardown
-        function to close the connection when the app context ends.
+        """Register the extension with the Flask app and set configuration defaults.
 
         Args:
             app (Flask): The Flask app instance.
@@ -30,92 +48,94 @@ class RabbitMQ:
 
         self.app = app
 
-        # Add RabbitMQ configuration defaults
         app.config.setdefault("RABBITMQ_HOST", "localhost")
         app.config.setdefault("RABBITMQ_PORT", 5672)
         app.config.setdefault("RABBITMQ_USER", "guest")
         app.config.setdefault("RABBITMQ_PASS", "guest")
         app.config.setdefault("RABBITMQ_VHOST", "/")
-
-        if not hasattr(app, "extensions"):
-            app.extensions = {}
+        # How many times to try to connect, and how long to wait between and during tries. Keep
+        # attempts * (socket timeout + delay) comfortably under the web server's request timeout.
+        app.config.setdefault("RABBITMQ_CONNECTION_ATTEMPTS", 3)
+        app.config.setdefault("RABBITMQ_RETRY_DELAY", 1)
+        app.config.setdefault("RABBITMQ_SOCKET_TIMEOUT", 5)
 
         app.extensions["rabbitmq"] = self
-
-        # Set up the proxy for current_app.rabbitmq
         app.rabbitmq = self
 
-        # Store configuration
-        self.host = app.config["RABBITMQ_HOST"]
-        self.port = app.config["RABBITMQ_PORT"]
-        self.username = app.config["RABBITMQ_USER"]
-        self.password = app.config["RABBITMQ_PASS"]
-
-        # Add teardown context
-        app.teardown_appcontext(self.teardown)
-
     def connect(self) -> pika.BlockingConnection:
-        """Create a new RabbitMQ connection."""
-        credentials = pika.PlainCredentials(
-            username=self.app.config["RABBITMQ_USER"],
-            password=self.app.config["RABBITMQ_PASS"],
-        )
+        """Open a new RabbitMQ connection, retrying a few times.
 
+        Raises:
+            pika.exceptions.AMQPConnectionError: If every attempt failed.
+        """
+        config = self.app.config
         parameters = pika.ConnectionParameters(
-            host=self.app.config["RABBITMQ_HOST"],
-            port=self.app.config["RABBITMQ_PORT"],
-            virtual_host=self.app.config["RABBITMQ_VHOST"],
-            credentials=credentials,
+            host=config["RABBITMQ_HOST"],
+            port=config["RABBITMQ_PORT"],
+            virtual_host=config["RABBITMQ_VHOST"],
+            credentials=pika.PlainCredentials(
+                username=config["RABBITMQ_USER"],
+                password=config["RABBITMQ_PASS"],
+            ),
+            connection_attempts=config["RABBITMQ_CONNECTION_ATTEMPTS"],
+            retry_delay=config["RABBITMQ_RETRY_DELAY"],
+            socket_timeout=config["RABBITMQ_SOCKET_TIMEOUT"],
+            blocked_connection_timeout=config["RABBITMQ_SOCKET_TIMEOUT"] * 6,
         )
-
         return pika.BlockingConnection(parameters)
 
-    def teardown(self, exception: Exception) -> None:
-        """Teardown function to close the RabbitMQ connection.
+    def publish(
+        self,
+        queue: str,
+        body: str | bytes,
+        exchange: str = "",
+        content_type: str | None = None,
+    ) -> None:
+        """Publish a message and wait for the broker to confirm it.
 
-        This function is called when the app context ends. It closes the RabbitMQ
-        connection if it exists.
-
-        Args:
-            exception: The exception that occurred, if any.
-        """
-        connection = getattr(g, "_rabbitmq_connection", None)
-        if connection is not None:
-            connection.close()
-
-    def publish(self, queue: str, body: str | bytes, exchange: str = "") -> None:
-        """Publish a message to a RabbitMQ queue.
+        The queue is declared durable with no arguments. The worker declares it the same way,
+        and any difference makes the second declaration fail with PRECONDITION_FAILED.
 
         Args:
             queue (str): The name of the queue to publish to.
             body (str | bytes): The message body to publish.
-            exchange (str): The exchange to publish to. Defaults to an empty string.
+            exchange (str): The exchange to publish to. Defaults to the default exchange.
+            content_type (str | None): Optional MIME type recorded on the message.
+
+        Raises:
+            TypeError: If the body is not a string or bytes.
+            PublishError: If the broker could not be reached or did not accept the message.
         """
         if not isinstance(body, (str, bytes)):
             raise TypeError("Body must be a string or bytes")
 
-        with self.connection() as connection:
-            channel = connection.channel()
-            channel.queue_declare(queue=queue, durable=True)
-            channel.basic_publish(exchange=exchange, routing_key=queue, body=body)
-
-    @contextmanager
-    def connection(self) -> Generator[pika.BlockingConnection]:
-        """Context manager for handling RabbitMQ connections."""
-        if not hasattr(g, "_rabbitmq_connection"):
-            g._rabbitmq_connection = self.connect()
+        properties = pika.BasicProperties(
+            delivery_mode=pika.DeliveryMode.Persistent,
+            content_type=content_type,
+        )
+        connection = None
         try:
-            yield g._rabbitmq_connection
-        except Exception as e:
-            # Log the error and try to reconnect
-            current_app.logger.exception(f"RabbitMQ connection error: {e}")
-            if hasattr(g, "_rabbitmq_connection"):
-                delattr(g, "_rabbitmq_connection")
-            raise
+            connection = self.connect()
+            channel = connection.channel()
+            channel.confirm_delivery()
+            channel.queue_declare(queue=queue, durable=True)
+            # mandatory: fail loudly if the message cannot be routed to a queue
+            channel.basic_publish(
+                exchange=exchange,
+                routing_key=queue,
+                body=body,
+                properties=properties,
+                mandatory=True,
+            )
+        except (AMQPError, OSError) as e:
+            raise PublishError(f"Could not publish to {queue!r}: {type(e).__name__}: {e}") from e
+        finally:
+            self._close(connection)
 
-
-def get_rabbitmq_connection() -> pika.BlockingConnection | None:
-    """Helper function to get the current RabbitMQ connection."""
-    if "_rabbitmq_connection" not in g:
-        g._rabbitmq_connection = current_app.rabbitmq.connect()
-    return g._rabbitmq_connection
+    @staticmethod
+    def _close(connection: pika.BlockingConnection | None) -> None:
+        """Close a connection, ignoring errors: the publish outcome is already decided."""
+        if connection is None or connection.is_closed:
+            return
+        with contextlib.suppress(AMQPError, OSError):
+            connection.close()

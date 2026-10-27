@@ -1,6 +1,6 @@
 import json
 
-from flask import Response, current_app, request
+from flask import Response, abort, current_app, request
 
 from api.routes import webhooks
 
@@ -15,10 +15,21 @@ def item_added() -> Response:
     It publishes the item data to a RabbitMQ queue for further processing.
 
     Returns:
-        Response: A 202 Accepted response indicating that the request was received successfully.
+        Response: A 202 Accepted response, sent only once RabbitMQ has confirmed the message.
+            400 for a body that is not a JSON object, 401 if a token is required and missing,
+            503 (with Retry-After) if the message could not be queued.
     """
-    data = request.json
+    # force=True: accept the body whatever Content-Type the sender used (the Jellyfin plugin
+    # does not always label it as JSON). Anything that is not a JSON object is the client's error.
+    data = request.get_json(force=True, silent=True)
+    if not isinstance(data, dict):
+        abort(400, "Request body must be a JSON object")
+
     rabbitmq = current_app.extensions["rabbitmq"]
-    rabbitmq.publish(queue=ITEM_ADDED_QUEUE, body=json.dumps(data))
+    rabbitmq.publish(
+        queue=ITEM_ADDED_QUEUE,
+        body=json.dumps(data),
+        content_type="application/json",
+    )
     current_app.logger.info({"operation": "item_added", "data": data})
     return Response(status=202)

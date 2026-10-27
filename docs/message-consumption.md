@@ -288,9 +288,11 @@ These are properties of the current design, worth keeping in mind when reading t
   - Scratch space needs room for a full copy of the movie (and for the extracted video stream
     during a Dolby Vision conversion). If the media library also needs room for the staged copy
     during the swap, that is another full copy on that disk.
-- **The API does not yet mark messages as persistent.** If RabbitMQ itself restarts, events that
-  were still waiting in the queue are lost, although the queue survives. The worker's own retry and
-  dead-letter copies are persistent.
+- **A 202 from the API means RabbitMQ confirmed the message**, and it is stored as persistent, so
+  events waiting in the queue survive a broker restart (the queue data lives in the
+  `rabbitmq_data` volume). If the broker cannot be reached the API answers 503 with `Retry-After`
+  instead. Whether Jellyfin's webhook plugin retries after a 503 has not been checked, so a webhook
+  sent while RabbitMQ is down may still be lost on the Jellyfin side.
 - **The retry delay is fixed.** It is part of the `.retry` queue's declaration. To change it, delete
   that queue first or RabbitMQ rejects the new settings.
 - **File locks are per worker process.** Two jobs that rewrite the same file wait for each other

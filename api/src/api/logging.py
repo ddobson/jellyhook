@@ -121,13 +121,6 @@ def init_app(app: Flask):
         logger.info(f"Response: {response.status_code}")
         return response
 
-    # Register exception handler
-    @app.errorhandler(Exception)
-    def handle_exception(e):
-        logger.exception(f"Unhandled exception: {str(e)}")
-        # Return appropriate error response to client
-        return {"error": "Internal server error"}, 500
-
     # Override Flask's logger with loguru
     app.logger.handlers = []
     app.logger.addHandler(LoguruHandler())
