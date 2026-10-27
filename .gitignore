@@ -113,6 +113,9 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+.pytest_cache/
+.uv-cache/
+.ruff_cache/
 .dmypy.json
 dmypy.json
 
@@ -125,8 +128,8 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# Misseclaneous
-CLAUDE*.md
+# Miscellaneous
+CLAUDE.local.md
 WARP.md
 *.DS_Store
 
