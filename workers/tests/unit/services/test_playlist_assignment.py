@@ -476,6 +476,21 @@ def test_exec_adds_the_item_when_the_playlist_does_not_contain_it() -> None:
     assert len(_posts(http)) == 1
 
 
+@pytest.mark.parametrize(
+    "listing",
+    [None, [], {}, {"Items": None}, {"Items": {"Id": "item123"}}],
+    ids=["none", "not-a-dict", "no-items", "items-null", "items-not-a-list"],
+)
+def test_exec_adds_the_item_when_the_playlist_listing_is_unexpected(listing: Any) -> None:
+    """An unrecognised listing counts as "not there", so the item is still added."""
+    http = SimpleNamespace(request=Mock(return_value=listing))
+    service = _build_service(http=http)
+
+    service.exec()
+
+    assert len(_posts(http)) == 1
+
+
 def test_exec_twice_adds_the_item_once() -> None:
     """Simulates a retry: the second run sees the entry the first one created."""
     playlist: list[str] = []
