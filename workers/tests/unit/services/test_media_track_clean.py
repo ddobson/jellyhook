@@ -238,7 +238,8 @@ def test_media_track_clean_service_exec_success(
     assert ffmpeg_cmd[0] == "ffmpeg"
     assert ffmpeg_cmd[ffmpeg_cmd.index("-i") + 1] == str(movie_file)
     maps = [ffmpeg_cmd[i + 1] for i, part in enumerate(ffmpeg_cmd) if part == "-map"]
-    assert maps == ["0:0", "0:1", "0:3"]  # video, English audio, English subtitle; not Spanish
+    # video, English audio, English subtitle (not Spanish), then any attachments (MKV fonts)
+    assert maps == ["0:0", "0:1", "0:3", "0:t?"]
     assert ffmpeg_cmd[ffmpeg_cmd.index("-c") + 1] == "copy"
     assert ffmpeg_cmd[ffmpeg_cmd.index("-map_metadata") + 1] == "0"
 

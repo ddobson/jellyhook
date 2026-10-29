@@ -99,3 +99,34 @@ def test_file_from_message_multiple_files_found(media_dir, mock_child_service):
             mock_child_service.file_from_message(message)
 
         assert "Found more than one video for 'Test Movie'" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("name", ["[REC]", "Who? Me*", "Brackets [Extended] Cut"])
+def test_file_from_message_treats_glob_characters_in_the_title_literally(
+    media_dir, mock_child_service, name
+):
+    """A title is a name, not a glob pattern: "[REC]" must not match only R, E or C."""
+    movie_dir = pathlib.Path(media_dir["movie_path"]) / f"{name} (2007)"
+    movie_dir.mkdir()
+    movie_file = movie_dir / f"{name}.mkv"
+    movie_file.write_text("movie")
+
+    with mock.patch("workers.services.service_base.config.MEDIA_PATHS", (media_dir["movie_path"],)):
+        result = mock_child_service.file_from_message({"Name": name, "Year": "2007"})
+
+    assert result == movie_file
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ({"ItemType": "Movie"}, True),
+        ({}, True),  # older payloads without a type are still looked up
+        ({"ItemType": "Episode"}, False),
+        ({"ItemType": "Series"}, False),
+        ({"ItemType": "Season"}, False),
+        ({"ItemType": "Audio"}, False),
+    ],
+)
+def test_is_movie_message(mock_child_service, message, expected):
+    assert mock_child_service.is_movie_message(message) is expected

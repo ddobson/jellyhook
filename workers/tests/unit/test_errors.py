@@ -1,5 +1,6 @@
 import pytest
 import requests
+from jellyfin_apiclient_python.exceptions import HTTPException as JellyfinHTTPException
 
 from workers.errors import (
     MediaNotFoundError,
@@ -107,3 +108,64 @@ def test_is_transient_survives_a_cause_cycle():
     second.__cause__ = first
 
     assert is_transient(first) is False
+
+
+def raised_while_handling(outer, inner):
+    """Raise `outer` inside an `except` for `inner`, as jellyfin_apiclient_python does."""
+    try:
+        try:
+            raise inner
+        except type(inner):
+            raise outer  # noqa: B904 - reproducing the client library's behavior
+    except type(outer) as exc:
+        return exc
+
+
+def test_is_transient_follows_the_implicit_context():
+    """The Jellyfin client re-raises network errors without `from`, leaving only __context__."""
+    error = raised_while_handling(WebhookWorkerError("wrapped"), requests.ConnectionError())
+
+    assert error.__cause__ is None
+    assert is_transient(error) is True
+
+
+def test_is_transient_ignores_a_context_suppressed_with_from_none():
+    try:
+        try:
+            raise requests.ConnectionError()
+        except requests.ConnectionError:
+            raise WebhookWorkerError("unrelated") from None
+    except WebhookWorkerError as exc:
+        error = exc
+
+    assert is_transient(error) is False
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        ("ServerUnreachable", True),
+        ("ReadTimeout", True),
+        (503, True),
+        (502, True),
+        (429, True),
+        (408, True),
+        ("Unauthorized", False),
+        ("AccessRestricted", False),
+        ("MissingSchema", False),
+        (404, False),
+        (400, False),
+    ],
+)
+def test_is_transient_classifies_jellyfin_client_errors(status, expected):
+    """The status alone decides, even with no requests error chained underneath."""
+    assert is_transient(JellyfinHTTPException(status, "detail")) is expected
+
+
+def test_is_transient_sees_a_jellyfin_outage_through_a_service_wrapper():
+    """metadata_update wraps the client error `from e`; the outage must still be retried."""
+    client_error = raised_while_handling(
+        JellyfinHTTPException("ServerUnreachable", "down"), requests.ConnectionError()
+    )
+
+    assert is_transient(wrap(WebhookWorkerError, "Failed to update metadata", client_error))

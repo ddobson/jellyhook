@@ -285,3 +285,21 @@ def test_without_write_access_to_the_default_exchange_the_worker_cannot_settle(
         assert support.total_count(broker, queue) == 1  # still there, ready or being redelivered
     finally:
         support.rabbitmqctl(broker, "delete_user", user)
+
+
+def test_an_unreadable_attempts_header_does_not_stop_the_consumer(
+    broker, queue, start_consumer, fast_retry
+):
+    """A dead letter replayed by hand with a junk count is retried; the consumer keeps going."""
+    handler = recorder(ProcessingResult.retry("not on disk yet"))
+    support.publish(broker, queue, b"replayed", headers={topology.ATTEMPTS_HEADER: "five"})
+    support.publish(broker, queue, b"next")
+
+    running = start_consumer(queue, handler)
+
+    assert support.wait_until(lambda: len(handler.calls) == 3, timeout=20)
+    assert support.wait_until(lambda: settled(broker, queue))
+    assert sorted(handler.calls) == [b"next", b"replayed", b"replayed"]
+    assert running.thread.is_alive()
+    assert running.errors == []
+    assert support.ready_count(broker, topology.dead_queue_name(queue)) == 0

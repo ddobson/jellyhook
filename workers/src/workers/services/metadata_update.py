@@ -18,6 +18,8 @@ class MetadataUpdateError(WebhookWorkerError):
 class MetadataUpdateService(ServiceBase):
     """Service to modify metadata (genres and tags) for media based on configured rules."""
 
+    movies_only = True
+
     def __init__(
         self,
         movie: Movie,

@@ -37,6 +37,7 @@ def open_connection() -> BlockingConnection:
         pika.ConnectionParameters(
             host=config.RABBITMQ_HOST,
             port=config.RABBITMQ_PORT,
+            virtual_host=config.RABBITMQ_VHOST,
             credentials=credentials,
             heartbeat=config.RABBITMQ_HEARTBEAT,
             blocked_connection_timeout=300,
@@ -45,6 +46,29 @@ def open_connection() -> BlockingConnection:
             retry_delay=2,
         ),
     )
+
+
+def _prior_attempts(headers: dict | None) -> int:
+    """Read how many times a message has already been tried from its attempts header.
+
+    Runs on the connection thread, where an exception would stop the consumer and, because the
+    message is redelivered first on restart, crash-loop the worker. A header that is missing or
+    not a usable count (say, set by hand when replaying a dead letter) counts as no attempts.
+
+    Args:
+        headers (dict | None): The message's AMQP headers.
+
+    Returns:
+        int: The number of earlier attempts, never negative.
+    """
+    raw = (headers or {}).get(topology.ATTEMPTS_HEADER, 0)
+    if isinstance(raw, bytes):
+        raw = raw.decode(errors="replace")
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        logger.warning(f"Ignoring unreadable {topology.ATTEMPTS_HEADER} header: {raw!r}")
+        return 0
 
 
 class QueueConsumer:
@@ -174,7 +198,7 @@ class QueueConsumer:
         body: bytes,
     ) -> None:
         """Hand a delivered message to a job thread. Runs on the connection thread."""
-        prior_attempts = int((properties.headers or {}).get(topology.ATTEMPTS_HEADER, 0))
+        prior_attempts = _prior_attempts(properties.headers)
         with self._in_flight_lock:
             self._in_flight += 1
 

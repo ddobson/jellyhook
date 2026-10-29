@@ -84,10 +84,14 @@ def _match_permissions(reference: pathlib.Path, path: pathlib.Path) -> None:
     os.chmod(path, stat.S_IMODE(info.st_mode))  # after chown, which can clear setuid bits
 
 
+def _safe_label(label: str) -> str:
+    """A short, filesystem-safe version of a human label for a scratch directory name."""
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in label)[:40]
+
+
 def _job_dir_name(label: str) -> str:
     """A filesystem-safe, unique directory name for a job."""
-    safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in label)[:40]
-    return f"{safe_label}-{uuid.uuid4().hex}"
+    return f"{_safe_label(label)}-{uuid.uuid4().hex}"
 
 
 def job_dir_path(base: str | os.PathLike[str], label: str) -> pathlib.Path:
@@ -118,8 +122,7 @@ def make_job_dir(base: str | os.PathLike[str], label: str) -> pathlib.Path:
     """
     base_path = pathlib.Path(base)
     base_path.mkdir(parents=True, exist_ok=True)
-    safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in label)[:40]
-    return pathlib.Path(tempfile.mkdtemp(prefix=f"{safe_label}-", dir=base_path))
+    return pathlib.Path(tempfile.mkdtemp(prefix=f"{_safe_label(label)}-", dir=base_path))
 
 
 def remove_dir(path: pathlib.Path) -> None:

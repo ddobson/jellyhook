@@ -1,5 +1,7 @@
+import glob
 import pathlib
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
 from workers import config
 from workers.errors import MediaNotFoundError, WebhookWorkerError
@@ -7,6 +9,10 @@ from workers.errors import MediaNotFoundError, WebhookWorkerError
 
 class ServiceBase(ABC):
     """Abstract base class for services."""
+
+    # True for services that work on the movie file located by `file_from_message`. The
+    # orchestrator skips them for other item types (episodes, music), which have no such file.
+    movies_only: ClassVar[bool] = False
 
     @abstractmethod
     def exec(self) -> None:
@@ -40,6 +46,23 @@ class ServiceBase(ABC):
         pass
 
     @staticmethod
+    def is_movie_message(message: dict) -> bool:
+        """Whether a message is about an item `file_from_message` can locate.
+
+        Only movies (including stand-up, which Jellyfin also types as Movie) live in a
+        "<Name> (<Year>)" folder under `MEDIA_PATHS`. Episodes, series, music and the like never
+        will, so looking for them would only retry until the message is dead-lettered.
+
+        Args:
+            message (dict): The Jellyfin webhook message.
+
+        Returns:
+            bool: True for movies, and for messages that do not say what type the item is.
+        """
+        item_type = message.get("ItemType")
+        return item_type is None or item_type == "Movie"
+
+    @staticmethod
     def file_from_message(message: dict) -> pathlib.Path:
         """Get the path to the file from a Jellyfin item_added webhook message.
 
@@ -64,9 +87,9 @@ class ServiceBase(ABC):
             if not obj_dir.exists():
                 continue
 
-            patterns = [
-                f"{message['Name'].replace(':', '')}*{file_type}" for file_type in file_types
-            ]
+            # Escaped: titles such as "[REC]" would otherwise be read as glob syntax
+            name_pattern = glob.escape(message["Name"].replace(":", ""))
+            patterns = [f"{name_pattern}*{file_type}" for file_type in file_types]
             files_found = [result for pattern in patterns for result in obj_dir.glob(pattern)]
 
             if files_found:

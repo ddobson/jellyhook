@@ -89,16 +89,23 @@ are easy to break by accident.
 
 - **Delivery is at-least-once.** A message is acked only after its job finishes (or after its retry
   or dead-letter copy is publisher-confirmed). The same event can therefore be processed twice, and
-  a retry re-runs *every* service for it. Services must be safe to repeat.
+  a retry re-runs *every* service for it. Services must be safe to repeat (for example,
+  `playlist_assignment` checks playlist membership before adding).
 - **Classify failures by exception type.** Raise `TransientError` (or a subclass such as
   `MediaNotFoundError`) for something that may clear up on its own. `is_transient()` in
-  `errors.py` also treats network errors and HTTP 5xx/408/429 as transient, and follows
-  `raise ... from exc` chains, so always keep the `from exc` when a service wraps an error.
+  `errors.py` also treats network errors, HTTP 5xx/408/429 and Jellyfin client errors for an
+  unreachable server as transient. It follows `raise ... from exc` chains (and implicit
+  `__context__`, which is how jellyfin_apiclient_python chains its errors), so always keep the
+  `from exc` when a service wraps an error.
   Anything else (including other 4xx) is permanent and goes straight to `<queue>.dead`. An unknown or unimportable service raises `ServiceConfigurationError`
   and fails the message; do not turn it into a silent skip.
 - **`metadata_update` is best-effort, except for transient failures.** A permanent failure there
   never fails a message; a transient one (Jellyfin down) does, so the update is retried rather than
   lost. Other services' failures always do.
+- **Movie-file services skip other item types.** `metadata_update`, `dovi_conversion` and
+  `media_track_clean` set `movies_only = True`, and the orchestrator skips them when the
+  message's `ItemType` is anything but `Movie`, since only movies have a file under `MEDIA_PATHS`.
+  A missing file for a movie is still `MediaNotFoundError` (retried).
 - **pika's `BlockingConnection` is not thread-safe.** Only the thread that runs
   `QueueConsumer.run()` may touch the connection or channel. Job threads hand results back through
   `add_callback_threadsafe`. Do not call pika from services.
@@ -140,6 +147,7 @@ Worker settings (defaults in `workers/src/workers/config/constants.py`):
 | `WORKER_MAX_CONCURRENT_JOBS` | `1` | Jobs at once across all queues (no effect with a single queue, since prefetch is 1) |
 | `WORKER_SHUTDOWN_GRACE_SECONDS` | `45` | Time in-flight jobs get after SIGTERM |
 | `RABBITMQ_HEARTBEAT` | `60` | AMQP heartbeat interval, seconds |
+| `RABBITMQ_VHOST` | `/` | Virtual host; must match the API's `RABBITMQ_VHOST` |
 
 The API reads `RABBITMQ_USER` / `RABBITMQ_PASS` (not `*_USERNAME` / `*_PASSWORD`; unrecognised names
 silently fall back to guest/guest).

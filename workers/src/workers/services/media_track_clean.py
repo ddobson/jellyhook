@@ -117,6 +117,8 @@ class MediaTrackCleanConfig:
 class MediaTrackCleanService(ServiceBase):
     """Service to clean up media tracks based on configured rules."""
 
+    movies_only = True
+
     def __init__(
         self,
         movie: Movie,
@@ -304,6 +306,10 @@ class MediaTrackCleanService(ServiceBase):
         # Add map options for each stream to keep
         for stream in streams_to_keep:
             cmd.extend(["-map", f"0:{stream.index}"])
+
+        # Keep attachments (MKV fonts that styled subtitles need). Optional, so files without
+        # any still work. Data streams are left out: the Matroska muxer rejects them.
+        cmd.extend(["-map", "0:t?"])
 
         # Copy streams without re-encoding
         cmd.extend(["-c", "copy"])

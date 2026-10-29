@@ -97,6 +97,7 @@ def test_open_connection_sets_heartbeat_and_timeouts():
         mock.patch.object(rabbitmq.pika, "ConnectionParameters") as parameters,
         mock.patch.object(rabbitmq.config, "RABBITMQ_HOST", "broker"),
         mock.patch.object(rabbitmq.config, "RABBITMQ_PORT", 5999),
+        mock.patch.object(rabbitmq.config, "RABBITMQ_VHOST", "/jellyhook"),
         mock.patch.object(rabbitmq.config, "RABBITMQ_HEARTBEAT", 30),
     ):
         result = rabbitmq.open_connection()
@@ -104,6 +105,7 @@ def test_open_connection_sets_heartbeat_and_timeouts():
     kwargs = parameters.call_args.kwargs
     assert kwargs["host"] == "broker"
     assert kwargs["port"] == 5999
+    assert kwargs["virtual_host"] == "/jellyhook"
     assert kwargs["heartbeat"] == 30
     assert kwargs["socket_timeout"] == 10
     assert kwargs["connection_attempts"] == 3
@@ -238,6 +240,25 @@ def test_attempt_count_carries_over_from_previous_deliveries(make_consumer, chan
     [(queue, properties)] = published(channel)
     assert queue == f"{QUEUE}.retry"
     assert properties.headers[topology.ATTEMPTS_HEADER] == 3
+
+
+@pytest.mark.parametrize(
+    ("header", "expected_attempts"),
+    [("five", 1), (None, 1), (-3, 1), ("2", 3), (b"2", 3), (2.0, 3)],
+)
+def test_unreadable_attempts_header_does_not_stop_the_consumer(
+    make_consumer, channel, header, expected_attempts
+):
+    """A hand-edited header must not raise on the connection thread and crash-loop the worker."""
+    handler = mock.MagicMock(return_value=ProcessingResult.retry("still missing"))
+    consumer = make_consumer(handler, max_attempts=5)
+
+    deliver(consumer, channel, headers={topology.ATTEMPTS_HEADER: header})
+
+    handler.assert_called_once()
+    [(queue, properties)] = published(channel)
+    assert queue == f"{QUEUE}.retry"
+    assert properties.headers[topology.ATTEMPTS_HEADER] == expected_attempts
 
 
 def test_retries_exhausted_moves_message_to_dead_letter_queue(make_consumer, channel):
