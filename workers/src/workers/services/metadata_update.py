@@ -7,7 +7,7 @@ from jellyfin_apiclient_python.exceptions import HTTPException
 from workers.clients.jellyfin import get_client
 from workers.errors import WebhookWorkerError
 from workers.logger import logger
-from workers.movie import Movie
+from workers.models.movie import Movie
 from workers.services.service_base import ServiceBase
 
 

@@ -5,8 +5,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from workers.models.items import MediaStream, MediaTrackCleanConfig
-from workers.services.media_track_clean import MediaTrackCleanService
+from workers.services.media_track_clean import (
+    MediaStream,
+    MediaTrackCleanConfig,
+    MediaTrackCleanService,
+)
 
 
 def test_media_stream_from_ffprobe():

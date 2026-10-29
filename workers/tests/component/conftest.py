@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from workers import fileops, utils
-from workers.movie import Movie
+from workers.models.movie import Movie
 from workers.services import DoviConversionService, MediaTrackCleanService
 
 

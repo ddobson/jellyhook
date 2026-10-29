@@ -2,7 +2,7 @@ import json
 import pathlib
 
 from workers import utils
-from workers.movie import Movie
+from workers.models.movie import Movie
 from workers.services.media_track_clean import MediaTrackCleanService
 
 
