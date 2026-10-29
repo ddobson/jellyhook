@@ -6,7 +6,7 @@ from unittest import mock
 import pytest
 
 from workers.errors import WebhookWorkerError
-from workers.movie import Movie
+from workers.models.movie import Movie
 from workers.services.dovi_conversion import DoviConversionService
 
 

@@ -3,7 +3,7 @@ from unittest import mock
 
 import pytest
 
-from workers.models.items import Movie
+from workers.models.movie import Movie
 from workers.parsers.movies import StandardMovieParser
 
 
