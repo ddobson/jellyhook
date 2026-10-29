@@ -7,7 +7,7 @@ from workers import fileops, utils
 from workers.config import TEMP_DIR
 from workers.errors import WebhookWorkerError
 from workers.logger import logger
-from workers.movie import Movie
+from workers.models.movie import Movie
 from workers.services.service_base import ServiceBase
 
 DOVI_PROFLE_7 = 7
