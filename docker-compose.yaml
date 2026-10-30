@@ -19,7 +19,7 @@ services:
       - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
-      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/10-jellyhook.conf:ro
+      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/10-jellyhook.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 15s

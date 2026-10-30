@@ -13,7 +13,7 @@ WORKER_IMAGE="ghcr.io/ddobson/jellyhook-worker:${TAG}"
 RABBITMQ_IMAGE="rabbitmq:4.0.5-management-alpine"
 
 # --- Host paths -----------------------------------------------------------------------------
-# Copy of rabbitmq/rabbitmq.conf from this repository (raises consumer_timeout to 24 hours)
+# Copy of rabbitmq.conf from this repository (raises consumer_timeout to 24 hours)
 RABBITMQ_CONF="/srv/jellyhook/rabbitmq.conf"
 # Directory holding jellyhook.json (or .yaml); the worker also writes logs/worker.log here
 CONFIG_DIR="/srv/jellyhook/config"

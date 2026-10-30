@@ -41,7 +41,7 @@ docker run -d --name rabbitmq --hostname rabbitmq \
 - **Pin `--hostname`.** RabbitMQ keys its data directory on the node name, which comes from the
   hostname. Without a fixed hostname, a recreated container cannot find the queued messages in the
   volume.
-- **Mount `rabbitmq/rabbitmq.conf`** from this repository. It raises `consumer_timeout` to 24
+- **Mount `rabbitmq.conf`** from this repository. It raises `consumer_timeout` to 24
   hours. Without it the limit is 30 minutes, and any job that runs longer (a Dolby Vision
   conversion or track clean on a large remux) has its channel closed by the broker and the message
   redelivered, over and over.
