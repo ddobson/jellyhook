@@ -52,8 +52,10 @@ jellyhook/
 ├── rabbitmq/             # Broker config mounted by docker-compose.yaml
 ├── docker-compose.yaml   # Development stack (not a production deployment)
 └── docs/
+    ├── docker.md                 # Running the published images with plain docker (no Compose)
     ├── message-consumption.md    # How the worker consumes messages, with worked examples
     └── examples/                 # Example configuration files
+        ├── docker-run.example.sh     # Ready-to-edit plain-docker deployment script
         ├── jellyhook.example.json    # Example webhook configuration
         └── jellyhook.example.yaml    # Example webhook configuration
 ```

@@ -102,6 +102,10 @@ uv run python -m workers.main
 
 ## Deployment
 
+To run the published images with plain `docker` (no Compose), see
+[Running Jellyhook with Plain Docker](docs/docker.md) and the ready-to-edit
+[`docs/examples/docker-run.example.sh`](docs/examples/docker-run.example.sh).
+
 ### Building and Pushing Docker Images
 
 The project includes Makefile commands for building and pushing multi-architecture Docker images:
