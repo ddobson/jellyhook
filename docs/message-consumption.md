@@ -197,7 +197,7 @@ design failed: the process stayed up with nothing consuming. A fresh process has
 
 The broker expects a consumer to acknowledge within `consumer_timeout`. RabbitMQ's default is 30
 minutes, which a large remux conversion can exceed; when that happens the broker closes the channel
-and the message is delivered again, so the job runs twice. The bundled `rabbitmq/rabbitmq.conf` raises it to 24 hours. If you run your own broker, set the same.
+and the message is delivered again, so the job runs twice. The bundled `rabbitmq.conf` raises it to 24 hours. If you run your own broker, set the same.
 
 ### Several webhooks
 
@@ -224,9 +224,9 @@ hand.
 2. **A long enough stop timeout.** `stop_grace_period` of at least
    `WORKER_SHUTDOWN_GRACE_SECONDS` + 15 seconds (see above).
 3. **A long enough ack timeout on the broker.** Set `consumer_timeout = 86400000` (24 hours) in
-   `rabbitmq.conf`, as `rabbitmq/rabbitmq.conf` does for the bundled broker. A broker you run
-   yourself keeps RabbitMQ's 30-minute default otherwise, which is shorter than a large Dolby Vision
-   conversion. An unacknowledged message is held for the whole job.
+   `rabbitmq.conf`, as this repository's `rabbitmq.conf` does for the bundled broker. A broker
+   you run yourself keeps RabbitMQ's 30-minute default otherwise, which is shorter than a large
+   Dolby Vision conversion. An unacknowledged message is held for the whole job.
 4. **Permissions, if you use a restricted RabbitMQ user.** The worker declares `<queue>.retry` and
    `<queue>.dead` and publishes to them through the default exchange. Grant the user configure and
    read on all three queue names, and write on those names **plus `amq.default`**:

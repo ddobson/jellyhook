@@ -9,6 +9,10 @@
       "path": "./.github"
     },
     {
+      "name": "📖 Docs",
+      "path": "./docs"
+    },
+    {
       "name": "🚀 Api",
       "path": "./api",
       "settings": {
