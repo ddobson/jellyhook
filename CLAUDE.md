@@ -49,11 +49,13 @@ jellyhook/
 │       ├── component/    # Run the real media tools on real files
 │       ├── integration/  # Run against a real RabbitMQ in Docker (not in the default run)
 │       └── unit/         # Unit tests
-├── rabbitmq/             # Broker config mounted by docker-compose.yaml
 ├── docker-compose.yaml   # Development stack (not a production deployment)
+├── rabbitmq.conf         # Broker config mounted by docker-compose.yaml
 └── docs/
+    ├── docker.md                 # Running the published images with plain docker (no Compose)
     ├── message-consumption.md    # How the worker consumes messages, with worked examples
     └── examples/                 # Example configuration files
+        ├── docker-run.example.sh     # Ready-to-edit plain-docker deployment script
         ├── jellyhook.example.json    # Example webhook configuration
         └── jellyhook.example.yaml    # Example webhook configuration
 ```
