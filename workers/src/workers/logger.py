@@ -22,9 +22,10 @@ def get_logger() -> "Logger":
     if os.getenv("WORKER_ENV") != "production":
         return guru_logger
 
-    # Also log to file in production
+    # Also log to file in production. The scheduler shares the worker's /config mount, so it sets
+    # its own path: two processes writing to and rotating one file would clobber each other.
     guru_logger.add(
-        "/config/logs/worker.log",
+        os.getenv("WORKER_LOG_PATH") or "/config/logs/worker.log",
         format=fmt,
         level=level,
         rotation="10 MB",
