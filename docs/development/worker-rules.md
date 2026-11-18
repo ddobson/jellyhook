@@ -9,6 +9,11 @@ worked examples, see [message-consumption.md](../guides/message-consumption.md).
   or dead-letter copy is publisher-confirmed). The same event can therefore be processed twice, and
   a retry re-runs *every* service for it. Services must be safe to repeat (for example,
   `playlist_assignment` checks playlist membership before adding).
+- **A Refresh replaces the whole playlist, so it is safe to repeat.** It finds (or creates) the
+  playlist by exact name and swaps its contents in place, keeping the ID; an empty Episode Pool
+  leaves the playlist alone. It reaches Jellyfin only through `JellyfinLibrary`
+  (`clients/jellyfin_library.py`), so its tests run against the in-memory fake in
+  `tests/unit/services/conftest.py`; add any new Jellyfin operation to both.
 - **Classify failures by exception type.** Raise `TransientError` (or a subclass such as
   `MediaNotFoundError`) for something that may clear up on its own. `is_transient()` in
   `errors.py` also treats network errors, HTTP 5xx/408/429 and Jellyfin client errors for an
