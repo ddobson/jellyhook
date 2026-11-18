@@ -109,8 +109,8 @@ docker run -d --name jellyhook-worker --network jellyhook --restart unless-stopp
 
 - **Configuration.** The worker reads `/config/jellyhook.json` (set `JELLYHOOK_CONFIG_PATH` to use
   a `.yaml` file instead). Start from [`examples/jellyhook.example.yaml`](../examples/jellyhook.example.yaml).
-  If the file is missing, invalid or has no enabled webhooks, the worker logs a warning and exits
-  1, and Docker restarts it in a loop. Mount the whole `/config` directory rather than the single
+  If the file is missing, invalid or has neither an enabled webhook nor a Random Playlist, the
+  worker logs a warning and exits 1, and Docker restarts it in a loop. Mount the whole `/config` directory rather than the single
   file: with `WORKER_ENV=production` the worker also writes `/config/logs/worker.log`.
 - **Media, read-write.** The services rewrite files in place. The worker finds a file by looking
   for `<MOVIE_PATH>/<Name> (<Year>)/<Name>*.mkv` (also `.mp4` and `.avi`), and the same under

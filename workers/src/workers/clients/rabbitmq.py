@@ -97,7 +97,8 @@ class QueueConsumer:
         """Initialize a QueueConsumer.
 
         Args:
-            webhook_id (str): ID of the webhook this queue belongs to.
+            webhook_id (str): ID of the webhook this queue belongs to, or the name of the
+                consumer for a queue that is not a webhook's (the Refresh queue).
             queue (str): Name of the queue to consume.
             handler (MessageHandler): Processes a message body and reports how it went.
             job_slots (threading.BoundedSemaphore): Caps how many jobs run at once. Shared by
@@ -149,7 +150,7 @@ class QueueConsumer:
                 queue=self.queue,
                 on_message_callback=self._on_message,
             )
-            logger.info(f"Consuming queue {self.queue} for webhook {self.webhook_id}")
+            logger.info(f"Consuming queue {self.queue} for {self.webhook_id}")
 
             while not self._stop_event.is_set():
                 self._connection.process_data_events(time_limit=1)
@@ -227,7 +228,7 @@ class QueueConsumer:
         try:
             result = self._handler(self.webhook_id, body)
         except Exception as e:  # the handler should not raise, but never lose the message
-            logger.exception(f"Handler raised for webhook {self.webhook_id}")
+            logger.exception(f"Handler raised for {self.webhook_id}")
             reason = f"{type(e).__name__}: {e}"
             result = (
                 ProcessingResult.retry(reason)

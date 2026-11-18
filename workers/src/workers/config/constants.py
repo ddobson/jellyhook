@@ -43,6 +43,9 @@ MAX_CONCURRENT_JOBS = int(os.getenv("WORKER_MAX_CONCURRENT_JOBS", "1"))
 # On SIGTERM, how long to let in-flight jobs finish before disconnecting (the broker then
 # redelivers anything unacknowledged). Keep below the container's stop_grace_period.
 SHUTDOWN_GRACE_SECONDS = float(os.getenv("WORKER_SHUTDOWN_GRACE_SECONDS", "45"))
+# The queue Refresh messages travel on, from the scheduler to the worker. Kept apart from every
+# Webhook queue, and given the same .retry / .dead companions.
+REFRESH_QUEUE = os.getenv("REFRESH_QUEUE", "jellyhook:random_playlist_refresh")
 
 # Jellyfin configuration
 JELLYFIN_API_KEY = os.getenv("JELLYFIN_API_KEY", "")
