@@ -251,7 +251,7 @@ def _restricted_user(broker, queue: str, *, with_default_exchange: bool) -> str:
 def test_the_documented_minimal_permissions_are_enough_for_every_path(
     broker, queue, start_consumer, fast_retry
 ):
-    """CLAUDE.md: configure + read on the queues, write on them *and* amq.default."""
+    """worker-rules.md: configure + read on the queues, write on them *and* amq.default."""
     user = _restricted_user(broker, queue, with_default_exchange=True)
     try:
         handler = recorder(

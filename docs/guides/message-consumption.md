@@ -5,7 +5,7 @@ moment the worker is finished with it: what runs, in what order, what happens wh
 wrong, and what you will see in RabbitMQ while it does.
 
 For the one-page summary and the list of settings, see
-[Message Handling](../workers/README.md#message-handling) in the worker README. The code lives in
+[Message Handling](../../workers/README.md#message-handling) in the worker README. The code lives in
 `workers/src/workers/clients/` (`rabbitmq.py`, `topology.py`, `retry_policy.py`) and
 `workers/src/workers/supervisor.py`.
 
@@ -293,7 +293,7 @@ These are properties of the current design, worth keeping in mind when reading t
   events waiting in the queue survive a broker restart or a hard kill (the queue data lives in
   the `rabbitmq_data` volume). One narrow exception: a queue created within moments of an unclean
   crash can be lost with its contents, because the broker writes queue declarations lazily. See
-  `docs/testing.md`. If the broker cannot be reached the API answers 503 with `Retry-After`
+  `docs/development/testing.md`. If the broker cannot be reached the API answers 503 with `Retry-After`
   instead. Whether Jellyfin's webhook plugin retries after a 503 has not been checked, so a webhook
   sent while RabbitMQ is down may still be lost on the Jellyfin side.
 - **The retry delay is fixed.** It is part of the `.retry` queue's declaration. To change it, delete

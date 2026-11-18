@@ -6,7 +6,7 @@ with nothing but `docker`, which means doing by hand what Compose would otherwis
 the broker's volume and config, start order, restart policies and environment.
 
 A complete, ready-to-edit script is in
-[`examples/docker-run.example.sh`](examples/docker-run.example.sh). Fill in the values at the top
+[`examples/docker-run.example.sh`](../examples/docker-run.example.sh). Fill in the values at the top
 and run it. Running it again recreates the containers with the current settings, which is also how
 you upgrade.
 
@@ -108,7 +108,7 @@ docker run -d --name jellyhook-worker --network jellyhook --restart unless-stopp
 ### Mounts
 
 - **Configuration.** The worker reads `/config/jellyhook.json` (set `JELLYHOOK_CONFIG_PATH` to use
-  a `.yaml` file instead). Start from [`examples/jellyhook.example.yaml`](examples/jellyhook.example.yaml).
+  a `.yaml` file instead). Start from [`examples/jellyhook.example.yaml`](../examples/jellyhook.example.yaml).
   If the file is missing, invalid or has no enabled webhooks, the worker logs a warning and exits
   1, and Docker restarts it in a loop. Mount the whole `/config` directory rather than the single
   file: with `WORKER_ENV=production` the worker also writes `/config/logs/worker.log`.

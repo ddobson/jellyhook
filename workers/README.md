@@ -81,7 +81,7 @@ seconds (Docker's default of 10 would kill the worker mid-drain).
 
 For a walkthrough with worked examples, and a checklist for deploying outside Docker Compose
 (restart policy, stop timeout, broker `consumer_timeout`, restricted-user permissions), see
-[How the Worker Consumes Messages](../docs/message-consumption.md).
+[How the Worker Consumes Messages](../docs/guides/message-consumption.md).
 
 The retry delay (60 seconds) is part of the `<queue>.retry` declaration. To change it, delete
 that queue first or RabbitMQ rejects the redeclare.
