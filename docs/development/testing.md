@@ -80,6 +80,14 @@ duration the test controls, plus the real `python -m workers.main`:
 - The real worker with Random Playlists and no webhook consumes the Refresh queue, and sends a
   Refresh for a name that is not in the config to `.dead` with a readable reason.
 
+The real scheduler, `python -m workers.scheduler` (`test_scheduler_process.py`):
+
+- `run "<name>"` puts one persistent `application/json` Refresh on the Refresh queue, declares
+  `.retry` and `.dead` as the worker does, and leaves the state file alone.
+- At startup it publishes a catch-up Refresh for a never-refreshed playlist and records it, and
+  `SIGTERM` then stops it with exit 0.
+- With the broker down it exits 1 and records nothing.
+
 ### API (`api/tests/integration`)
 
 - A 202 means the message is on the queue, persistent, with `application/json` content type.

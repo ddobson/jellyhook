@@ -47,6 +47,11 @@ SHUTDOWN_GRACE_SECONDS = float(os.getenv("WORKER_SHUTDOWN_GRACE_SECONDS", "45"))
 # Webhook queue, and given the same .retry / .dead companions.
 REFRESH_QUEUE = os.getenv("REFRESH_QUEUE", "jellyhook:random_playlist_refresh")
 
+# Scheduler
+# When the scheduler last published a Refresh for each Random Playlist. Keep it on a volume that
+# survives container recreation, or every playlist counts as never refreshed after an upgrade.
+SCHEDULER_STATE_PATH = os.getenv("SCHEDULER_STATE_PATH", "/var/lib/jellyhook/scheduler-state.json")
+
 # Jellyfin configuration
 JELLYFIN_API_KEY = os.getenv("JELLYFIN_API_KEY", "")
 JELLYFIN_HOST = os.getenv("JELLYFIN_HOST")
