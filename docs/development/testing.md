@@ -12,7 +12,14 @@ something that matters.
 Unit tests with a mocked broker can show that the code calls `basic_ack` after `basic_publish`.
 They cannot show that a message survives a broker restart, that a `SIGKILL`ed worker's job is
 picked up again, or that the broker actually refuses a queue declared with different arguments.
-The integration layer exists for those.
+The integration layer exists for those. It is excluded from the default run by
+`-m "not integration"`.
+
+The two packages each carry their own copy of `tests/integration/support.py` on purpose: they must
+not import from each other, so keep the copies separate.
+
+When you change delivery behavior (acks, retries, topology, publishing, signals), add or update an
+integration test as well as a unit test, and check the new test fails when the behavior is broken.
 
 ## Running them
 

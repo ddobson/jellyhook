@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run Jellyhook with plain `docker` (no Compose). See docs/docker.md for what each setting does.
+# Run Jellyhook with plain `docker` (no Compose). See docs/guides/docker.md for what each setting does.
 #
 # Copy this file, fill in the values below, and run it. Running it again recreates the
 # containers with the current settings and images, which is also how you upgrade: queued
