@@ -1,34 +1,16 @@
-import signal
 import sys
 import threading
-from types import FrameType
 
 from workers import config
 from workers.clients import rabbitmq
 from workers.logger import logger
 from workers.services.orchestrator import process_webhook_message
 from workers.services.refresh import process_refresh_message
+from workers.signals import install_signal_handlers
 from workers.supervisor import supervise
 
 # Names the Refresh queue's consumer in logs and thread names, where a webhook ID would go
 REFRESH_CONSUMER_ID = "random_playlist_refresh"
-
-
-def install_signal_handlers(stop_event: threading.Event) -> None:
-    """Turn SIGTERM (docker stop) and SIGINT (ctrl-c) into a graceful shutdown request.
-
-    The handler only sets the event. Logging here could deadlock if the signal lands while
-    the main thread is mid-log, and the supervisor logs the shutdown once it wakes up.
-
-    Args:
-        stop_event (threading.Event): The event to set.
-    """
-
-    def request_stop(signum: int, frame: FrameType | None) -> None:
-        stop_event.set()
-
-    signal.signal(signal.SIGTERM, request_stop)
-    signal.signal(signal.SIGINT, request_stop)
 
 
 def main() -> int:

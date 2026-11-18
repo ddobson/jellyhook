@@ -2,6 +2,9 @@
 
 It never calls Jellyfin; the worker performs the Refresh (ADR 0001). `run_scheduler` is the whole
 scheduler behind three seams: a `Clock`, a `RefreshPublisher` and the state file path.
+
+`python -m workers.scheduler [run "<playlist name>"]` (`__main__.py`) runs it with the real
+clock, signal handlers and `RabbitMQRefreshPublisher`.
 """
 
 from .clock import Clock, SystemClock

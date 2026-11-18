@@ -52,6 +52,11 @@ owning its own connection), `topology.py` (the work/retry/dead queue names and d
   reconnect loops out of the process.
 - **SIGTERM drains.** In-flight jobs get `WORKER_SHUTDOWN_GRACE_SECONDS`; set the container's
   `stop_grace_period` to at least that plus 15 seconds.
+- **The scheduler connects per publish.** `python -m workers.scheduler` (in the worker image)
+  opens a connection, declares the Refresh queue's topology, publishes with a confirm and closes,
+  each time. A connection held across a week-long wait would miss heartbeats. A publish that
+  fails (broker down, connection dropped, no confirm) makes it exit non-zero, like the worker;
+  SIGTERM ends its wait at once. `run "<playlist name>"` publishes one Refresh and exits.
 - **Concurrency is a setting, default off.** All queues share `WORKER_MAX_CONCURRENT_JOBS` job
   slots (1); earlier versions ran one job per webhook.
 
@@ -82,3 +87,4 @@ Defaults live in `workers/src/workers/config/constants.py`.
 | `RABBITMQ_HEARTBEAT` | `60` | AMQP heartbeat interval, seconds |
 | `RABBITMQ_VHOST` | `/` | Virtual host; must match the API's `RABBITMQ_VHOST` |
 | `REFRESH_QUEUE` | `jellyhook:random_playlist_refresh` | Queue carrying Refresh messages; consumed only when Random Playlists are configured. Gets `.retry` / `.dead` like a webhook queue |
+| `SCHEDULER_STATE_PATH` | `/var/lib/jellyhook/scheduler-state.json` | Scheduler only: when it last published a Refresh for each Random Playlist. Keep it on a volume that survives container recreation |
