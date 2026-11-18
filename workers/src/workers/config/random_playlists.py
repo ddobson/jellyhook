@@ -5,7 +5,7 @@ scheduler both call it when they load the config, so the two agree on what is va
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from cronsim import CronSim, CronSimError
@@ -46,6 +46,34 @@ class Schedule:
             CronSim(self.expression, datetime.now())
         except CronSimError as exc:
             raise ValueError(f"{self.expression!r} is not a valid cron expression: {exc}") from exc
+
+    def next_firing(self, after: datetime) -> datetime:
+        """The first time this Schedule fires strictly after `after`.
+
+        Times are wall-clock times in whatever timezone `after` is in; the scheduler passes the
+        container's local time (`TZ`).
+
+        Args:
+            after (datetime): The moment to look forward from.
+
+        Returns:
+            datetime: The next firing time, on a whole minute.
+        """
+        return next(CronSim(self.expression, after))
+
+    def latest_firing(self, at_or_before: datetime) -> datetime:
+        """The last time this Schedule fired at or before `at_or_before`.
+
+        Args:
+            at_or_before (datetime): The moment to look back from, inclusive.
+
+        Returns:
+            datetime: The latest firing time, on a whole minute.
+        """
+        # Firings fall on whole minutes and cronsim's reverse search is strict, so search back
+        # from the start of the following minute to include a firing at `at_or_before` itself
+        following_minute = at_or_before.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        return next(CronSim(self.expression, following_minute, reverse=True))
 
 
 @dataclass(frozen=True)

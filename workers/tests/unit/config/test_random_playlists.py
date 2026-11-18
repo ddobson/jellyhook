@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 
 from workers.config.random_playlists import (
@@ -167,3 +169,32 @@ def test_no_section_means_no_random_playlists():
     """A config without `random_playlists:` (or with it left empty) defines none."""
     assert parse_random_playlists(None) == ()
     assert parse_random_playlists([]) == ()
+
+
+@pytest.mark.parametrize(
+    ("after", "expected"),
+    [
+        (datetime(2026, 11, 14, 23, 0), datetime(2026, 11, 15, 1, 0)),
+        (datetime(2026, 11, 15, 0, 59, 59, 999999), datetime(2026, 11, 15, 1, 0)),
+        # Strictly after: a firing at `after` itself is not the next one
+        (datetime(2026, 11, 15, 1, 0), datetime(2026, 11, 22, 1, 0)),
+        (datetime(2026, 11, 15, 1, 0, 30), datetime(2026, 11, 22, 1, 0)),
+    ],
+)
+def test_next_firing_is_the_first_firing_strictly_after(after, expected):
+    """`0 1 * * 0` is Sundays at 1am; 2026-11-15 is a Sunday."""
+    assert Schedule("0 1 * * 0").next_firing(after) == expected
+
+
+@pytest.mark.parametrize(
+    ("at_or_before", "expected"),
+    [
+        (datetime(2026, 11, 15, 0, 59, 59, 999999), datetime(2026, 11, 8, 1, 0)),
+        # Inclusive: a firing at `at_or_before` itself counts
+        (datetime(2026, 11, 15, 1, 0), datetime(2026, 11, 15, 1, 0)),
+        (datetime(2026, 11, 15, 1, 0, 59), datetime(2026, 11, 15, 1, 0)),
+        (datetime(2026, 11, 21, 12, 0), datetime(2026, 11, 15, 1, 0)),
+    ],
+)
+def test_latest_firing_is_the_last_firing_at_or_before(at_or_before, expected):
+    assert Schedule("0 1 * * 0").latest_firing(at_or_before) == expected
