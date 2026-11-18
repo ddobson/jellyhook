@@ -5,6 +5,7 @@ from typing import Any
 import yaml
 
 from workers import utils
+from workers.config.random_playlists import RandomPlaylist, parse_random_playlists
 from workers.logger import logger
 from workers.parsers import MovieNamingScheme
 
@@ -16,6 +17,7 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
     """
 
     config: dict[str, Any] = {}
+    random_playlists: tuple[RandomPlaylist, ...] = ()
 
     def get_enabled_webhooks(self) -> dict[str, dict[str, Any]]:
         """Get a list of enabled webhooks.
@@ -111,13 +113,33 @@ class WorkerConfig(metaclass=utils.SingletonMeta):
         """Set the worker configuration."""
         self.config = config
 
+    def get_random_playlists(self) -> tuple[RandomPlaylist, ...]:
+        """Get the Random Playlists from the top-level `random_playlists:` section.
+
+        Returns:
+            The validated Random Playlists, in config order; empty when none are configured.
+        """
+        return self.random_playlists
+
     @classmethod
     def load(cls, config_path: str) -> "WorkerConfig":
-        """Load the configuration from the config file."""
+        """Load the configuration from the config file.
+
+        Args:
+            config_path (str): The path to the JSON or YAML config file.
+
+        Returns:
+            The loaded singleton.
+
+        Raises:
+            RandomPlaylistConfigError: If the `random_playlists:` section is invalid.
+        """
         worker = cls()
         jellyhook_config = load_config_file(config_path)
+        random_playlists = parse_random_playlists(jellyhook_config.get("random_playlists"))
         worker_config = jellyhook_config.get("worker", {})
         worker._set_worker_config(worker_config)
+        worker.random_playlists = random_playlists
         return worker
 
 

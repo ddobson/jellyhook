@@ -37,7 +37,13 @@ def main() -> int:
             can bring it back.
     """
     logger.info(f"Loading Jellyhook configuration from {config.JELLYHOOK_CONFIG_PATH}")
-    worker_config = config.WorkerConfig.load(config.JELLYHOOK_CONFIG_PATH)  # Singleton first init
+    try:
+        # Singleton first init
+        worker_config = config.WorkerConfig.load(config.JELLYHOOK_CONFIG_PATH)
+    except config.RandomPlaylistConfigError as exc:
+        logger.error(f"Invalid Random Playlist configuration: {exc}")
+        logger.error("Exiting...")
+        return 1
 
     # Get enabled webhooks
     enabled_webhooks = worker_config.get_enabled_webhooks()
