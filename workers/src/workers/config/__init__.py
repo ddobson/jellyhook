@@ -24,6 +24,15 @@ from .constants import (
     TEMP_DIR,
     WORKER_ENV,
 )
+from .random_playlists import (
+    RandomPlaylist,
+    RandomPlaylistConfigError,
+    Schedule,
+    SeriesById,
+    SeriesByTitle,
+    SeriesRef,
+    parse_random_playlists,
+)
 from .worker_config import WorkerConfig
 
 __all__ = [
@@ -41,6 +50,13 @@ __all__ = [
     "MAX_CONCURRENT_JOBS",
     "MEDIA_PATHS",
     "MOVIE_PATH",
+    "RandomPlaylist",
+    "RandomPlaylistConfigError",
+    "Schedule",
+    "SeriesById",
+    "SeriesByTitle",
+    "SeriesRef",
+    "parse_random_playlists",
     "RABBITMQ_HEARTBEAT",
     "RABBITMQ_HOST",
     "RABBITMQ_PASS",

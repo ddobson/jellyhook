@@ -78,6 +78,33 @@ def test_main_with_no_enabled_webhooks_exits_non_zero():
     assert logger.warning.call_count >= 1
 
 
+@mock.patch.dict("workers.utils.SingletonMeta._instances", {}, clear=True)
+def test_main_refuses_to_start_on_invalid_random_playlists(tmp_path):
+    """Story 36: the worker rejects the Random Playlist config the scheduler would reject."""
+    path = tmp_path / "jellyhook.yaml"
+    path.write_text(
+        "worker:\n"
+        "  webhooks:\n"
+        "    item_added: {enabled: true, queue: 'jellyfin:item_added', services: []}\n"
+        "random_playlists:\n"
+        "  - {name: Shuffle, series: [], size: 25, schedule: '0 1 * * 0'}\n"
+    )
+
+    with (
+        mock.patch.object(worker_main.config, "JELLYHOOK_CONFIG_PATH", str(path)),
+        mock.patch.object(worker_main.rabbitmq, "QueueConsumer") as consumer_class,
+        mock.patch.object(worker_main, "supervise") as supervise,
+        mock.patch.object(worker_main, "logger") as logger,
+    ):
+        assert worker_main.main() == 1
+
+    consumer_class.assert_not_called()
+    supervise.assert_not_called()
+    logged = " ".join(str(call.args[0]) for call in logger.error.call_args_list)
+    assert "'Shuffle'" in logged
+    assert "series" in logged
+
+
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT])
 def test_signal_handlers_request_a_graceful_stop(signum):
     """Docker stop (SIGTERM) and ctrl-c (SIGINT) set the event instead of killing the process."""

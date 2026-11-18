@@ -4,6 +4,12 @@ from unittest import mock
 import pytest
 import yaml
 
+from workers.config.random_playlists import (
+    RandomPlaylist,
+    RandomPlaylistConfigError,
+    Schedule,
+    SeriesByTitle,
+)
 from workers.config.worker_config import WorkerConfig, load_config_file
 from workers.logger import logger
 
@@ -113,6 +119,51 @@ def test_singleton_behavior(mock_config_file, mock_config_data):
     assert config1.config == mock_config_data["worker"]
     assert config2.config == mock_config_data["worker"]
     assert config1.config is config2.config
+
+
+RANDOM_PLAYLISTS_YAML = """\
+worker:
+  webhooks: {}
+random_playlists:
+  - name: Bob's Burgers Random
+    series: ["Bob's Burgers"]
+    size: 25
+    schedule: "0 1 * * 0"
+"""
+
+
+@mock.patch.dict("workers.utils.SingletonMeta._instances", {}, clear=True)
+def test_load_reads_top_level_random_playlists(tmp_path):
+    """`random_playlists:` sits beside `worker:` and loads into Random Playlist objects."""
+    path = tmp_path / "jellyhook.yaml"
+    path.write_text(RANDOM_PLAYLISTS_YAML)
+
+    config = WorkerConfig.load(str(path))
+
+    assert config.get_random_playlists() == (
+        RandomPlaylist(
+            name="Bob's Burgers Random",
+            series=(SeriesByTitle("Bob's Burgers"),),
+            size=25,
+            schedule=Schedule("0 1 * * 0"),
+        ),
+    )
+
+
+@mock.patch.dict("workers.utils.SingletonMeta._instances", {}, clear=True)
+def test_load_without_random_playlists_has_none(mock_config_file):
+    """A config written before Random Playlists existed still loads, with none defined."""
+    assert WorkerConfig.load(str(mock_config_file)).get_random_playlists() == ()
+
+
+@mock.patch.dict("workers.utils.SingletonMeta._instances", {}, clear=True)
+def test_load_rejects_invalid_random_playlists(tmp_path):
+    """Invalid Random Playlist config fails the load rather than being skipped."""
+    path = tmp_path / "jellyhook.yaml"
+    path.write_text(RANDOM_PLAYLISTS_YAML.replace("size: 25", "size: 0"))
+
+    with pytest.raises(RandomPlaylistConfigError, match=r"Bob's Burgers Random.*size"):
+        WorkerConfig.load(str(path))
 
 
 def test_load_config_file_nonexistent():
