@@ -93,3 +93,4 @@ Defaults live in `workers/src/workers/config/constants.py`.
 | `RABBITMQ_VHOST` | `/` | Virtual host; must match the API's `RABBITMQ_VHOST` |
 | `REFRESH_QUEUE` | `jellyhook:random_playlist_refresh` | Queue carrying Refresh messages; consumed only when Random Playlists are configured. Gets `.retry` / `.dead` like a webhook queue |
 | `SCHEDULER_STATE_PATH` | `/var/lib/jellyhook/scheduler-state.json` | Scheduler only: when it last published a Refresh for each Random Playlist. Keep it on a volume that survives container recreation |
+| `WORKER_LOG_PATH` | `/config/logs/worker.log` | The log file written with `WORKER_ENV=production` (read by `logger.py`). The scheduler sets `/config/logs/scheduler.log`, since it shares the worker's `/config` mount and two processes must not rotate one file |

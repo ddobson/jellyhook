@@ -35,7 +35,13 @@ Testing layers and what each proves: [testing.md](testing.md).
   it out of commits.
 - For running the published images without Compose, see [docker.md](../guides/docker.md).
 - RabbitMQ data lives in the `rabbitmq_data` volume. `docker compose down -v` deletes it and every
-  queued message.
+  queued message, and also the `scheduler_state` volume, so the next start refreshes every Random
+  Playlist.
+- The `scheduler` service runs `python3 -m workers.scheduler` from the worker image, with the
+  worker's config mount and RabbitMQ settings. It reads the config only at startup: after editing
+  `random_playlists:`, run `docker compose restart worker` and then
+  `docker compose restart scheduler`. A manual Refresh is
+  `docker compose exec scheduler python3 -m workers.scheduler run "<playlist name>"`.
 - Both Dockerfiles install from `uv.lock` with `--frozen`: after changing dependencies in a
   `pyproject.toml`, regenerate that package's `uv.lock` or the image build will not pick them up.
 - The worker image picks the `dovi_tool` release by `TARGETARCH` (amd64 or arm64).

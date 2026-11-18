@@ -15,7 +15,8 @@ RABBITMQ_IMAGE="rabbitmq:4.0.5-management-alpine"
 # --- Host paths -----------------------------------------------------------------------------
 # Copy of rabbitmq.conf from this repository (raises consumer_timeout to 24 hours)
 RABBITMQ_CONF="/srv/jellyhook/rabbitmq.conf"
-# Directory holding jellyhook.json (or .yaml); the worker also writes logs/worker.log here
+# Directory holding jellyhook.json (or .yaml); the worker writes logs/worker.log here and the
+# scheduler logs/scheduler.log
 CONFIG_DIR="/srv/jellyhook/config"
 # Library root containing the movies/ and stand-up/ folders, mounted read-write
 MEDIA_DIR="/mnt/media"
@@ -32,6 +33,11 @@ JELLYFIN_PORT="8096"
 JELLYFIN_API_KEY="change-me"
 JELLYFIN_USER_ID="change-me"
 
+# --- Random Playlists -----------------------------------------------------------------------
+# The timezone the scheduler reads Schedules in (an IANA name). The scheduler is harmless without
+# any random_playlists: configured; it logs a warning and waits idle.
+TZ_NAME="Etc/UTC"
+
 # --- Ports published on the host ------------------------------------------------------------
 API_PORT="8000"
 
@@ -45,12 +51,15 @@ replace_container() {
 
 docker network inspect jellyhook >/dev/null 2>&1 || docker network create jellyhook
 docker volume inspect rabbitmq_data >/dev/null 2>&1 || docker volume create rabbitmq_data
+# When the scheduler last published a Refresh for each Random Playlist; survives recreation
+docker volume inspect scheduler_state >/dev/null 2>&1 || docker volume create scheduler_state
 
 docker pull "$RABBITMQ_IMAGE"
 docker pull "$API_IMAGE"
 docker pull "$WORKER_IMAGE"
 
 # Stop the worker first so in-flight jobs finish (or are redelivered) before the broker goes.
+replace_container jellyhook-scheduler
 replace_container jellyhook-worker
 replace_container jellyhook-api
 replace_container rabbitmq
@@ -99,5 +108,21 @@ docker run -d --name jellyhook-worker \
     -e RABBITMQ_USER="$RABBITMQ_USER" \
     -e RABBITMQ_PASS="$RABBITMQ_PASS" \
     "$WORKER_IMAGE"
+
+# The scheduler runs from the worker image. It shares the worker's config directory, so it gets
+# its own log file, and keeps its state file on the scheduler_state volume. Started after the
+# worker, so the worker already knows every Random Playlist the scheduler catches up on.
+docker run -d --name jellyhook-scheduler \
+    --network jellyhook --restart unless-stopped \
+    --init \
+    -v "${CONFIG_DIR}:/config" \
+    -v scheduler_state:/var/lib/jellyhook \
+    -e WORKER_ENV=production \
+    -e WORKER_LOG_PATH=/config/logs/scheduler.log \
+    -e TZ="$TZ_NAME" \
+    -e RABBITMQ_USER="$RABBITMQ_USER" \
+    -e RABBITMQ_PASS="$RABBITMQ_PASS" \
+    "$WORKER_IMAGE" \
+    python3 -m workers.scheduler
 
 echo "Jellyhook is running. Point Jellyfin's webhook at http://<this-host>:${API_PORT}/hooks/item_added"

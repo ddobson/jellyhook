@@ -22,6 +22,9 @@ To build them yourself instead, run `docker build -t jellyhook-api ./api` and
 `docker build -t jellyhook-worker ./workers`. The default build argument `ENV=production` leaves
 out dev dependencies.
 
+The scheduler, needed only for [Random Playlists](configuration.md#random-playlists), runs from
+the worker image with a different command; there is no separate image.
+
 ## 1. Network and broker
 
 ```sh
@@ -128,9 +131,10 @@ docker run -d --name jellyhook-worker --network jellyhook --restart unless-stopp
 |---|---|---|
 | `JELLYFIN_HOST` | none | **Required.** Include the scheme (`http://...`); the port is appended separately. |
 | `JELLYFIN_PORT` | `8096` | |
-| `JELLYFIN_API_KEY` | empty | Needed by `metadata_update` and `playlist_assignment`. |
-| `JELLYFIN_USER_ID` | empty | As above. |
+| `JELLYFIN_API_KEY` | empty | Needed by `metadata_update`, `playlist_assignment` and Refreshes of Random Playlists. |
+| `JELLYFIN_USER_ID` | empty | As above. Random Playlists are owned by this user, and `unplayed_only` means unplayed by them. |
 | `WORKER_ENV` | **`development`** | Set to `production`. Otherwise logging is at DEBUG and no log file is written. |
+| `WORKER_LOG_PATH` | `/config/logs/worker.log` | The log file with `WORKER_ENV=production`. Leave it for the worker; the scheduler sets its own. |
 | `MOVIE_PATH` | `/data/media/movies` | Must match your mounts. |
 | `STANDUP_PATH` | `/data/media/stand-up` | Must match your mounts. |
 | `TEMP_DIR` | `/data/tmp` | |
@@ -141,14 +145,79 @@ docker run -d --name jellyhook-worker --network jellyhook --restart unless-stopp
 | `WORKER_MAX_CONCURRENT_JOBS` | `1` | Jobs at once across all queues. |
 | `WORKER_SHUTDOWN_GRACE_SECONDS` | `45` | Keep `--stop-timeout` at least this plus 15. |
 | `RABBITMQ_HEARTBEAT` | `60` | Seconds. |
+| `REFRESH_QUEUE` | `jellyhook:random_playlist_refresh` | The queue Refreshes arrive on, consumed only when Random Playlists are configured. Must match the scheduler's. |
 | `DEBUG` | `0` | Leave off. It starts debugpy, which the production image does not include, so the worker crashes. |
 
 Use `--env-file` to keep secrets off the command line.
 
+## 4. Scheduler
+
+Only needed for [Random Playlists](configuration.md#random-playlists). The scheduler keeps their
+Schedules and publishes a Refresh to RabbitMQ when one fires; the worker does the Refresh. The
+scheduler never calls Jellyfin.
+
+```sh
+docker volume create scheduler_state
+
+docker run -d --name jellyhook-scheduler --network jellyhook --restart unless-stopped \
+  --init \
+  -v /srv/jellyhook/config:/config \
+  -v scheduler_state:/var/lib/jellyhook \
+  -e WORKER_ENV=production \
+  -e WORKER_LOG_PATH=/config/logs/scheduler.log \
+  -e TZ=Europe/London \
+  -e RABBITMQ_USER=jellyhook -e RABBITMQ_PASS=<password> \
+  ghcr.io/ddobson/jellyhook-worker:<tag> \
+  python3 -m workers.scheduler
+```
+
+- **Same config as the worker.** Mount the same `/config` directory (and set the same
+  `JELLYHOOK_CONFIG_PATH`, if you changed it). An invalid `random_playlists:` section makes the
+  scheduler exit 1; with none configured it logs a warning and waits idle, so it is safe to run
+  either way.
+- **Its own log file.** With `WORKER_ENV=production` the scheduler, like the worker, writes a log
+  file under `/config/logs`. Set `WORKER_LOG_PATH=/config/logs/scheduler.log`, or both containers
+  write to and rotate `worker.log`.
+- **A volume for the state file.** The scheduler records when it last published a Refresh for
+  each Random Playlist in `/var/lib/jellyhook/scheduler-state.json`. Without a volume there, every
+  recreate (an upgrade, for example) counts every playlist as never refreshed and refreshes them
+  all.
+- **`TZ`** sets the timezone Schedules are read in, as an IANA name such as `Europe/London`. The
+  default is UTC, so `0 1 * * 0` would mean 1am UTC.
+- **`--restart unless-stopped` is required**, for the same reason as the worker's: a publish that
+  fails because RabbitMQ is unreachable makes the scheduler exit non-zero, and Docker brings it
+  back. On restart it catches up any Refresh it missed. SIGTERM stops it at once, so the default
+  stop timeout is enough.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `JELLYHOOK_CONFIG_PATH` | `/config/jellyhook.json` | Only `random_playlists:` is read. |
+| `RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASS`, `RABBITMQ_VHOST` | as the worker | Must reach the same broker and vhost as the worker. |
+| `REFRESH_QUEUE` | `jellyhook:random_playlist_refresh` | Must match the worker's. |
+| `SCHEDULER_STATE_PATH` | `/var/lib/jellyhook/scheduler-state.json` | Keep it on the volume. |
+| `WORKER_ENV` | **`development`** | Set to `production`, as for the worker. |
+| `WORKER_LOG_PATH` | `/config/logs/worker.log` | Set to `/config/logs/scheduler.log`. |
+| `TZ` | UTC | The timezone Schedules are read in. |
+
+The Jellyfin variables are not needed here.
+
+To Refresh a Random Playlist now, without waiting for its Schedule (and without changing when the
+next one happens):
+
+```sh
+docker exec jellyhook-scheduler python3 -m workers.scheduler run "Bob's Burgers Random"
+```
+
+Both containers read the config only at startup. After editing `random_playlists:`, restart the
+worker first and then the scheduler (`docker restart jellyhook-worker`, then
+`docker restart jellyhook-scheduler`), so the worker knows any new playlist before the scheduler
+publishes a Refresh for it.
+
 ## What Compose did that plain Docker does not
 
-- **No start ordering.** Compose waited for RabbitMQ's healthcheck. Without it, a worker that
-  starts first fails to connect, exits and restarts until the broker answers; that is expected. The
+- **No start ordering.** Compose waited for RabbitMQ's healthcheck. Without it, a worker (or a
+  scheduler with a Refresh to publish) that starts first fails to connect, exits and restarts
+  until the broker answers; that is expected. The
   API connects per request and returns 503 with `Retry-After` until RabbitMQ is up. Starting
   RabbitMQ first avoids most of this; the example script waits on `rabbitmq-diagnostics ping`
   before starting the others.
@@ -213,7 +282,8 @@ broker's volume off the disk that holds the media and scratch space.
 
 ## Upgrading
 
-Pull the new images and recreate the API and worker containers with the same settings (or rerun the
-example script). Stop the worker with `docker stop`, not `docker rm -f`, so it gets its grace
-period. Queued messages are in the `rabbitmq_data` volume and survive; `docker volume rm
-rabbitmq_data` deletes them.
+Pull the new images and recreate the API, worker and scheduler containers with the same settings
+(or rerun the example script). Stop the worker with `docker stop`, not `docker rm -f`, so it gets
+its grace period. Queued messages are in the `rabbitmq_data` volume and survive; `docker volume rm
+rabbitmq_data` deletes them. The scheduler's state is in the `scheduler_state` volume, so a
+recreated scheduler refreshes only the Random Playlists that are actually due.
