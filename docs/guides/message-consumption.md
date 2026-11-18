@@ -49,6 +49,14 @@ is declared exactly as the API declares it, so existing installs keep working.
 | `<queue>.retry` | Holds a failed event for 60 seconds, then sends it back to `<queue>` |
 | `<queue>.dead` | Events the worker gave up on. Nothing consumes this queue. |
 
+Refreshes of Random Playlists travel the same way on a queue of their own, the Refresh queue
+(`REFRESH_QUEUE`, default `jellyhook:random_playlist_refresh`), with its own `.retry` and `.dead`.
+A Refresh message carries only the Random Playlist's name, `{"name": "Bob's Burgers Shuffle"}`; the
+worker looks the definition up in its config when it processes the message. A name that is not in
+the config goes straight to `.dead`. The worker consumes the Refresh queue whenever at least one
+Random Playlist is configured, even with no webhook enabled, and the Refresh queue shares the job
+slots with the webhook queues.
+
 ## One message, start to finish
 
 1. RabbitMQ delivers one message. The worker asks for one at a time (prefetch of 1), so the rest
@@ -239,7 +247,8 @@ hand.
      '^jellyfin:item_added(\.retry|\.dead)?$'
    ```
 
-   (The arguments are configure, write, read. Repeat the queue names for each enabled webhook.)
+   (The arguments are configure, write, read. Repeat the queue names for each enabled webhook,
+   and for the Refresh queue if you configure Random Playlists.)
    Without the `amq.default` write permission, publishing a retry fails with `ACCESS_REFUSED`
    even though the queue permissions look right. The API publishes the same way, so a restricted
    API user needs that write permission too. The default `guest` user needs none of this.

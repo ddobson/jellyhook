@@ -77,6 +77,8 @@ duration the test controls, plus the real `python -m workers.main`:
 - The real worker processes a real message through the orchestrator and the `metadata_update`
   service, and parks a message for a file that has not landed yet on `.retry` with a readable
   reason.
+- The real worker with Random Playlists and no webhook consumes the Refresh queue, and sends a
+  Refresh for a name that is not in the config to `.dead` with a readable reason.
 
 ### API (`api/tests/integration`)
 
