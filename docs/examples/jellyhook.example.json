@@ -89,5 +89,15 @@
         ]
       }
     }
-  }
+  },
+  "random_playlists": [
+    {
+      "name": "Bob's Burgers Random",
+      "series": ["Bob's Burgers"],
+      "size": 25,
+      "schedule": "0 1 * * 0",
+      "include_specials": false,
+      "unplayed_only": false
+    }
+  ]
 }

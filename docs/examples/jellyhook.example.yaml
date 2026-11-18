@@ -49,3 +49,14 @@ worker:
                   item_types:
                     - Movie
                   max_runtime_minutes: 120
+
+# Random Playlists sit at the top level, next to `worker:`. The scheduler container publishes a
+# Refresh when each Schedule fires, and the worker does the Refresh. See
+# docs/guides/configuration.md.
+random_playlists:
+  - name: Bob's Burgers Random   # the playlist's name in Jellyfin, and its identity
+    series: ["Bob's Burgers"]    # series titles, or { id: "<series id>" } entries
+    size: 25
+    schedule: "0 1 * * 0"        # 5-field cron in the container's TZ: Sundays at 1am
+    include_specials: false
+    unplayed_only: false
