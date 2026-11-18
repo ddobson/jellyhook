@@ -6,6 +6,9 @@ networks:
 volumes:
   # Queue data. Without this, recreating the container discards every queued message.
   rabbitmq_data:
+  # When the scheduler last published a Refresh for each Random Playlist. Without this, recreating
+  # the container counts every Random Playlist as never refreshed and refreshes them all at once.
+  scheduler_state:
 
 services:
   rabbitmq:
@@ -112,3 +115,42 @@ services:
       JELLYFIN_HOST: "http://homelab.local"
       JELLYFIN_USER_ID: "" # Add your Jellyfin user ID here
       JELLYHOOK_CONFIG_PATH: "/config/jellyhook.json"
+
+  # Keeps the Random Playlists' Schedules and publishes a Refresh to RabbitMQ when one fires; the
+  # worker does the Refresh. Same image, config and RabbitMQ settings as the worker. Both read the
+  # config only at startup: after editing random_playlists, run `docker compose restart worker`
+  # and then `docker compose restart scheduler` (see docs/guides/configuration.md).
+  scheduler:
+    build:
+      context: ./workers
+      dockerfile: Dockerfile
+      args:
+        ENV: development
+    image: jellyhook:worker-local
+    restart: unless-stopped
+    init: true
+    command: python3 -m workers.scheduler
+    volumes:
+      - type: bind
+        source: ./workers/jellyhook.local.json
+        target: /config/jellyhook.json
+      - type: bind
+        source: ./workers
+        target: /app
+      # SCHEDULER_STATE_PATH defaults to /var/lib/jellyhook/scheduler-state.json
+      - scheduler_state:/var/lib/jellyhook
+    networks:
+      - jellyhook
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    env_file:
+      - ./workers/.env
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      WORKER_ENV: development
+      # With WORKER_ENV=production the log file would otherwise be the worker's own
+      WORKER_LOG_PATH: /config/logs/scheduler.log
+      JELLYHOOK_CONFIG_PATH: "/config/jellyhook.json"
+      # Schedules are read in this timezone
+      TZ: ${TZ:-UTC}

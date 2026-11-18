@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,9 @@ from workers.config.random_playlists import (
     SeriesByTitle,
     parse_random_playlists,
 )
+from workers.config.worker_config import load_config_file
+
+EXAMPLES_DIR = Path(__file__).resolve().parents[4] / "docs" / "examples"
 
 
 def test_valid_entry_loads_with_defaults():
@@ -198,3 +202,13 @@ def test_next_firing_is_the_first_firing_strictly_after(after, expected):
 )
 def test_latest_firing_is_the_last_firing_at_or_before(at_or_before, expected):
     assert Schedule("0 1 * * 0").latest_firing(at_or_before) == expected
+
+
+@pytest.mark.parametrize("example", ["jellyhook.example.yaml", "jellyhook.example.json"])
+def test_example_configs_define_a_valid_random_playlist(example):
+    """The documented examples pass the same validation the worker and scheduler run."""
+    section = load_config_file(str(EXAMPLES_DIR / example)).get("random_playlists")
+
+    playlists = parse_random_playlists(section)
+
+    assert [playlist.name for playlist in playlists] == ["Bob's Burgers Random"]
