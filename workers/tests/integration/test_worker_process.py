@@ -11,6 +11,7 @@ import pytest
 import support
 
 from workers.clients import topology
+from workers.services.refresh import refresh_message
 
 pytestmark = pytest.mark.integration
 
@@ -299,3 +300,65 @@ def test_the_real_worker_parks_a_message_for_a_file_that_has_not_landed_on_retry
     assert properties.headers[topology.ATTEMPTS_HEADER] == 1
     assert "MediaNotFoundError" in properties.headers[topology.FAILURE_REASON_HEADER]
     assert support.ready_count(broker, topology.dead_queue_name(queue)) == 0
+
+
+# --- the real entry point, Refreshes only ------------------------------------------------
+
+
+def write_refresh_worker_config(tmp_path: pathlib.Path, queue: str) -> dict[str, str]:
+    """Config for `python -m workers.main` with one Random Playlist and no Webhook at all."""
+    config_file = tmp_path / "jellyhook.yaml"
+    config_file.write_text(
+        "random_playlists:\n"
+        "  - name: Bob's Burgers Shuffle\n"
+        '    series: ["Bob\'s Burgers"]\n'
+        "    size: 25\n"
+        "    schedule: '0 1 * * 0'\n"
+    )
+    return {"JELLYHOOK_CONFIG_PATH": str(config_file), "REFRESH_QUEUE": queue}
+
+
+def test_the_real_worker_with_only_random_playlists_consumes_the_refresh_queue(
+    broker, queue, tmp_path, processes
+):
+    """Stories 40 and 41: Random Playlists alone keep the worker running, consuming Refreshes."""
+    env = write_refresh_worker_config(tmp_path, queue)
+    support.publish(broker, queue, refresh_message("Bob's Burgers Shuffle"))
+    worker = spawn(broker, env, "-m", "workers.main")
+    processes.append(worker)
+
+    assert support.wait_until(
+        lambda: consuming(broker, queue)
+        and support.ready_count(broker, queue) == 0
+        and support.unacked_count(broker, queue) == 0,
+        timeout=60,
+    )
+    worker.send_signal(signal.SIGTERM)
+
+    assert reap(worker) == 0
+    # The name is in the config, so the message is not dead-lettered as unknown. (What the
+    # Refresh itself does with it, and whether it needs a retry, is not this test's concern.)
+    assert support.ready_count(broker, topology.dead_queue_name(queue)) == 0
+
+
+def test_the_real_worker_dead_letters_a_refresh_for_a_name_not_in_the_config(
+    broker, queue, tmp_path, processes
+):
+    """Story 37: a Refresh for a removed Random Playlist lands on .dead, with a readable reason."""
+    env = write_refresh_worker_config(tmp_path, queue)
+    support.publish(broker, queue, refresh_message("Removed Shuffle"))
+    worker = spawn(broker, env, "-m", "workers.main")
+    processes.append(worker)
+
+    dead = topology.dead_queue_name(queue)
+    assert support.wait_until(lambda: support.ready_count(broker, dead) == 1, timeout=60)
+    worker.send_signal(signal.SIGTERM)
+    assert reap(worker) == 0
+
+    ((properties, body),) = support.take_all(broker, dead)
+    assert body == refresh_message("Removed Shuffle")
+    assert properties.headers[topology.ATTEMPTS_HEADER] == 1
+    reason = properties.headers[topology.FAILURE_REASON_HEADER]
+    assert "'Removed Shuffle'" in reason
+    assert "not in the config" in reason
+    assert support.ready_count(broker, topology.retry_queue_name(queue)) == 0

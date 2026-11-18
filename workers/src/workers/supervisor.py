@@ -47,7 +47,7 @@ def supervise(
             if not stop_event.is_set():
                 raise RuntimeError("consumer exited without being asked to stop")
         except Exception as e:
-            logger.exception(f"Consumer for webhook {consumer.webhook_id} failed")
+            logger.exception(f"Consumer {consumer.webhook_id} failed")
             with failures_lock:
                 failures.append(f"{consumer.webhook_id}: {type(e).__name__}: {e}")
         finally:

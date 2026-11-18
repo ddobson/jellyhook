@@ -7,7 +7,11 @@ from workers import config
 from workers.clients import rabbitmq
 from workers.logger import logger
 from workers.services.orchestrator import process_webhook_message
+from workers.services.refresh import process_refresh_message
 from workers.supervisor import supervise
+
+# Names the Refresh queue's consumer in logs and thread names, where a webhook ID would go
+REFRESH_CONSUMER_ID = "random_playlist_refresh"
 
 
 def install_signal_handlers(stop_event: threading.Event) -> None:
@@ -45,10 +49,10 @@ def main() -> int:
         logger.error("Exiting...")
         return 1
 
-    # Get enabled webhooks
     enabled_webhooks = worker_config.get_enabled_webhooks()
-    if not enabled_webhooks:
-        logger.warning("No enabled webhooks found in configuration file.")
+    random_playlists = worker_config.get_random_playlists()
+    if not enabled_webhooks and not random_playlists:
+        logger.warning("No enabled webhooks or Random Playlists found in configuration file.")
         logger.warning("Exiting...")
         return 1
 
@@ -66,6 +70,17 @@ def main() -> int:
         )
         for webhook_id, webhook_config in enabled_webhooks.items()
     ]
+    if random_playlists:
+        # Refreshes share the job slots, so one can wait behind a long Dolby Vision conversion
+        consumers.append(
+            rabbitmq.QueueConsumer(
+                webhook_id=REFRESH_CONSUMER_ID,
+                queue=config.REFRESH_QUEUE,
+                handler=process_refresh_message,
+                job_slots=job_slots,
+                stop_event=stop_event,
+            )
+        )
     return supervise(consumers, stop_event, config.SHUTDOWN_GRACE_SECONDS)
 
 

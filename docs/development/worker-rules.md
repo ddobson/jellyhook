@@ -81,3 +81,4 @@ Defaults live in `workers/src/workers/config/constants.py`.
 | `WORKER_SHUTDOWN_GRACE_SECONDS` | `45` | Time in-flight jobs get after SIGTERM |
 | `RABBITMQ_HEARTBEAT` | `60` | AMQP heartbeat interval, seconds |
 | `RABBITMQ_VHOST` | `/` | Virtual host; must match the API's `RABBITMQ_VHOST` |
+| `REFRESH_QUEUE` | `jellyhook:random_playlist_refresh` | Queue carrying Refresh messages; consumed only when Random Playlists are configured. Gets `.retry` / `.dead` like a webhook queue |
