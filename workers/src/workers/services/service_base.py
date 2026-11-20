@@ -5,6 +5,7 @@ from typing import ClassVar
 
 from workers import config
 from workers.errors import MediaNotFoundError, WebhookWorkerError
+from workers.models.item import Item
 
 
 class ServiceBase(ABC):
@@ -59,8 +60,7 @@ class ServiceBase(ABC):
         Returns:
             bool: True for movies, and for messages that do not say what type the item is.
         """
-        item_type = message.get("ItemType")
-        return item_type is None or item_type == "Movie"
+        return Item.from_message(message).is_movie
 
     @staticmethod
     def file_from_message(message: dict) -> pathlib.Path:

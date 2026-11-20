@@ -14,6 +14,16 @@ class Item:
 
     genres: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
+    item_type: str | None = None
+
+    @property
+    def is_movie(self) -> bool:
+        """Whether this is a movie, the only type with a file the movie services can locate.
+
+        An item whose type the message does not state counts as a movie, so those services
+        still attempt it rather than silently skipping it.
+        """
+        return self.item_type is None or self.item_type == "Movie"
 
     @classmethod
     def from_message(cls, message: dict[str, Any]) -> "Item":
@@ -28,6 +38,7 @@ class Item:
         return cls(
             genres=_list_field(message.get("Genres")),
             tags=_list_field(message.get("Tags")),
+            item_type=message.get("ItemType") or message.get("Type"),
         )
 
 
