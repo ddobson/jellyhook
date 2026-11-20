@@ -1,6 +1,9 @@
 """Tests for the service orchestrator module."""
 
 import json
+import subprocess
+import threading
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -11,12 +14,28 @@ from jellyfin_apiclient_python.exceptions import HTTPException
 from workers.clients.jellyfin import JellyfinUnavailableError
 from workers.config import WorkerConfig
 from workers.errors import MediaNotFoundError, ServiceConfigurationError
+from workers.job import find_media_file
 from workers.results import Outcome, ProcessingResult
 from workers.services.dovi_conversion import DoviConversionService
 from workers.services.metadata_update import MetadataUpdateError
 from workers.services.orchestrator import ServiceOrchestrator, process_webhook_message
 from workers.services.playlist_assignment import PlaylistAssignmentError
 from workers.services.service_base import ServiceBase
+
+
+def _make_service(**attrs):
+    """A spec'd mock service that, like most, leaves the media file alone."""
+    service = mock.MagicMock(spec=ServiceBase)
+    service.modifies_media = False
+    for name, value in attrs.items():
+        setattr(service, name, value)
+    return service
+
+
+@pytest.fixture
+def job(make_job):
+    """A real Job; none of these tests need its media file to exist."""
+    return make_job({"Name": "Test Movie", "Year": 2023})
 
 
 @pytest.fixture
@@ -61,9 +80,8 @@ def mock_config_data():
 def mock_service():
     """Create a mock service class and instance."""
     # Create mock instance first
-    mock_service_instance = mock.MagicMock(spec=ServiceBase)
+    mock_service_instance = _make_service()
     mock_service_instance.exec.return_value = None
-    mock_service_instance.tmp_dir = Path("/tmp/test_service")
 
     # Now create the mock class with a class method
     mock_service_class = mock.MagicMock()
@@ -135,7 +153,7 @@ def test_get_enabled_services(orchestrator):
     assert result[0]["priority"] < result[1]["priority"]
 
 
-def test_create_service_instance_success():
+def test_create_service_instance_success(job):
     """Test creating a service instance - success case."""
     # We'll mock WorkerConfig.__init__ to avoid the singleton issue
     with mock.patch.object(WorkerConfig, "__init__", return_value=None):
@@ -145,14 +163,13 @@ def test_create_service_instance_success():
         orchestrator.worker_config = mock.MagicMock()
 
         # Create test data
-        message = {"Name": "Test Movie", "Year": 2023}
         service_config = {"temp_dir": "/tmp/test"}
 
         # Create a mock service instance
-        mock_service_instance = mock.MagicMock(spec=ServiceBase)
+        mock_service_instance = _make_service()
 
         # Create a simplified mock implementation of create_service_instance
-        def mock_create_service(service_name, msg, config):
+        def mock_create_service(service_name, job_, config):
             if service_name == "test_service":
                 return mock_service_instance
             return None
@@ -162,19 +179,17 @@ def test_create_service_instance_success():
             ServiceOrchestrator, "create_service_instance", side_effect=mock_create_service
         ):
             # Call the method being tested
-            service = orchestrator.create_service_instance("test_service", message, service_config)
+            service = orchestrator.create_service_instance("test_service", job, service_config)
 
             # Verify the correct service was returned
             assert service is mock_service_instance
 
             # Test an unknown service
-            service = orchestrator.create_service_instance(
-                "unknown_service", message, service_config
-            )
+            service = orchestrator.create_service_instance("unknown_service", job, service_config)
             assert service is None
 
 
-def test_create_service_instance_unknown_service():
+def test_create_service_instance_unknown_service(job):
     """Test creating a service instance - unknown service case."""
     # We'll mock WorkerConfig.__init__ to avoid the singleton issue
     with mock.patch.object(WorkerConfig, "__init__", return_value=None):
@@ -183,13 +198,12 @@ def test_create_service_instance_unknown_service():
         # Set up a mock worker_config
         orchestrator.worker_config = mock.MagicMock()
 
-        message = {"Name": "Test Movie", "Year": 2023}
         service_config = {"temp_dir": "/tmp/test"}
 
         with mock.patch("workers.services.orchestrator.logger") as mock_logger:
             # An unknown service is a configuration error, not a skip
             with pytest.raises(ServiceConfigurationError, match="Unknown service"):
-                orchestrator.create_service_instance("unknown_service", message, service_config)
+                orchestrator.create_service_instance("unknown_service", job, service_config)
 
             # Logger.error should be called
             mock_logger.error.assert_called_once_with("Unknown service: unknown_service")
@@ -198,7 +212,7 @@ def test_create_service_instance_unknown_service():
 @mock.patch("workers.services.orchestrator.importlib.import_module")
 # Mock WorkerConfig.__init__ to avoid the singleton issue
 @mock.patch.object(WorkerConfig, "__init__", return_value=None)
-def test_create_service_instance_import_error(mock_config, mock_importmod):
+def test_create_service_instance_import_error(mock_config, mock_importmod, job):
     """Test creating a service instance - import error case."""
     mock_dovi_service = mock.Mock(spec=DoviConversionService)
     mock_dovi_service.from_message.return_value = mock_dovi_service
@@ -206,13 +220,12 @@ def test_create_service_instance_import_error(mock_config, mock_importmod):
     orchestrator = ServiceOrchestrator("item_added")
     orchestrator.worker_config = mock.MagicMock()
 
-    message = {"Name": "Test Movie", "Year": 2023}
     service_config = {"temp_dir": "/tmp/test"}
     service_name = "dovi_conversion"
 
-    result = orchestrator.create_service_instance(service_name, message, service_config)
+    result = orchestrator.create_service_instance(service_name, job, service_config)
     assert result is mock_dovi_service
-    mock_dovi_service.from_message.assert_called_once_with(message, service_config)
+    mock_dovi_service.from_message.assert_called_once_with(job, service_config)
 
 
 def test_process_webhook_disabled_webhook(orchestrator):
@@ -290,10 +303,6 @@ def test_process_webhook_success(orchestrator, mock_service):
         # Each service was executed
         assert mock_service["instance"].exec.call_count == 2
 
-        # Check temp directories were added to the set
-        assert len(orchestrator.temp_dirs) == 1
-        assert Path("/tmp/test_service") in orchestrator.temp_dirs
-
 
 def test_process_webhook_service_creation_error(orchestrator):
     """Test processing a webhook - service creation error."""
@@ -350,10 +359,10 @@ def test_process_webhook_service_execution_error(orchestrator):
     ]
 
     # Set up mock services with different behaviors
-    metadata_service = mock.MagicMock(spec=ServiceBase)
+    metadata_service = _make_service()
     metadata_service.exec.side_effect = Exception("Metadata service failed")
 
-    dovi_service = mock.MagicMock(spec=ServiceBase)
+    dovi_service = _make_service()
     dovi_service.exec.side_effect = Exception("Dovi service failed")
 
     # Set up orchestrator with enabled webhook and services
@@ -390,72 +399,46 @@ def test_process_webhook_service_execution_error(orchestrator):
         mock_logger.error.assert_any_call("Service dovi_conversion failed: Dovi service failed")
 
 
-def test_cleanup_removes_scratch_directories(orchestrator, tmp_path):
-    """Every registered directory is deleted, contents included."""
-    dirs = {tmp_path / "service1", tmp_path / "service2"}
-    for d in dirs:
-        (d / "nested").mkdir(parents=True)
-        (d / "nested" / "partial.hevc").write_bytes(b"x")
-    orchestrator.temp_dirs = set(dirs)
-
-    orchestrator.cleanup()
-
-    assert not any(d.exists() for d in dirs)
-    assert orchestrator.temp_dirs == set()
-
-
-def test_cleanup_ignores_directories_that_are_already_gone(orchestrator, tmp_path):
-    orchestrator.temp_dirs = {tmp_path / "never_created"}
-
-    orchestrator.cleanup()  # must not raise
-
-
-def test_process_webhook_registers_scratch_dir_before_exec_so_failures_still_clean_up(
-    orchestrator, tmp_path
-):
+def test_process_webhook_removes_scratch_dirs_when_a_service_fails_mid_exec(orchestrator, tmp_path):
     """A service that dies mid-run must still have its scratch directory removed."""
-    scratch = tmp_path / "scratch"
-    scratch.mkdir()
-    (scratch / "half_written.hevc").write_bytes(b"x")
-    service = mock.MagicMock()
-    service.tmp_dir = scratch
-    service.locked_path = None
-    service.exec.side_effect = RuntimeError("boom")
+    orchestrator.temp_dir = tmp_path
+    scratch_dirs = []
+    _enable_services(orchestrator, ["dovi_conversion"])
+
+    def create_service(name, job, config):
+        def exec_():
+            scratch = job.scratch_dir("dovi")
+            scratch_dirs.append(scratch)
+            (scratch / "half_written.hevc").write_bytes(b"x")
+            raise RuntimeError("boom")
+
+        return _make_service(exec=mock.Mock(side_effect=exec_))
+
+    with mock.patch.object(orchestrator, "create_service_instance", side_effect=create_service):
+        result = orchestrator.process_webhook({"Name": "Item A", "Year": 2023})
+
+    assert result.outcome is Outcome.FAILED
+    assert len(scratch_dirs) == 1
+    assert not scratch_dirs[0].exists()
+
+
+def test_process_webhook_does_not_locate_the_file_for_services_that_do_not_need_it(orchestrator):
+    """Services like playlist_assignment never ask the Job for the file."""
+    _enable_services(orchestrator, ["playlist_assignment"])
+    service = _make_service()
 
     with (
-        mock.patch.object(orchestrator, "is_webhook_enabled", return_value=True),
-        mock.patch.object(orchestrator, "create_service_instance", return_value=service),
-        mock.patch.object(
-            orchestrator,
-            "get_enabled_services",
-            return_value=[{"name": "dovi_conversion", "config": {}}],
-        ),
+        mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service),
+        mock.patch("workers.job.find_media_file") as find,
     ):
-        result = orchestrator.process_webhook({"Name": "Item A", "Year": 2023})
-        orchestrator.cleanup()
+        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
 
-    assert result.outcome is Outcome.FAILED
-    assert not scratch.exists()
-
-
-def test_process_webhook_message_cleans_up_even_when_processing_raises():
-    orchestrator = mock.MagicMock()
-    orchestrator.process_webhook.side_effect = RuntimeError("boom")
-
-    with mock.patch("workers.services.orchestrator.ServiceOrchestrator", return_value=orchestrator):
-        result = process_webhook_message("item_added", b"{}")
-
-    assert result.outcome is Outcome.FAILED
-    orchestrator.cleanup.assert_called_once()
+    assert result == ProcessingResult.success()
+    find.assert_not_called()
 
 
-def test_services_that_modify_a_file_run_under_that_files_lock(orchestrator, tmp_path):
-    """Two jobs for the same file must not overlap; different files may."""
-    import threading
-    import time
-
-    movie = tmp_path / "movie.mkv"
-    movie.write_bytes(b"x")
+def test_services_that_modify_a_file_run_under_that_files_lock(orchestrator, make_job):
+    """Two jobs for the same file must not overlap."""
     running = 0
     peak = 0
     guard = threading.Lock()
@@ -470,13 +453,12 @@ def test_services_that_modify_a_file_run_under_that_files_lock(orchestrator, tmp
             running -= 1
 
     def make_service():
-        service = mock.MagicMock()
-        service.locked_path = movie
-        service.exec.side_effect = slow_exec
-        return service
+        return _make_service(modifies_media=True, exec=mock.Mock(side_effect=slow_exec))
 
+    message = {"Name": "Test Movie", "Year": "2023"}
     threads = [
-        threading.Thread(target=orchestrator._run_service, args=(make_service(),)) for _ in range(4)
+        threading.Thread(target=orchestrator._run_service, args=(make_service(), make_job(message)))
+        for _ in range(4)
     ]
     for t in threads:
         t.start()
@@ -486,11 +468,11 @@ def test_services_that_modify_a_file_run_under_that_files_lock(orchestrator, tmp
     assert peak == 1
 
 
-def test_services_without_a_locked_path_run_unlocked(orchestrator):
-    service = mock.MagicMock()
-    service.locked_path = None
+def test_services_that_leave_files_alone_run_unlocked_and_without_a_file(orchestrator, make_job):
+    service = _make_service()
+    job = make_job({"Name": "Not On Disk", "Year": "2023"})
 
-    orchestrator._run_service(service)
+    orchestrator._run_service(service, job)  # would raise MediaNotFoundError if it took the lock
 
     service.exec.assert_called_once()
 
@@ -520,7 +502,6 @@ def test_process_webhook_message_success():
 
         # The orchestrator was created with the correct webhook_id
         assert mock_orchestrator.process_webhook.called
-        assert mock_orchestrator.cleanup.called
 
 
 def test_process_webhook_message_error():
@@ -557,12 +538,12 @@ def _enable_services(orchestrator, names):
 
 def _failing_service(error):
     """Create a mock service whose exec raises the given error."""
-    service = mock.MagicMock(spec=ServiceBase)
+    service = _make_service()
     service.exec.side_effect = error
     return service
 
 
-def test_create_service_instance_import_failure_raises():
+def test_create_service_instance_import_failure_raises(job):
     """A service module that fails to import is a configuration error, not a skip."""
     with mock.patch.object(WorkerConfig, "__init__", return_value=None):
         orchestrator = ServiceOrchestrator("item_added")
@@ -574,10 +555,10 @@ def test_create_service_instance_import_failure_raises():
         ),
         pytest.raises(ServiceConfigurationError, match="Failed to import service dovi_conversion"),
     ):
-        orchestrator.create_service_instance("dovi_conversion", {}, {})
+        orchestrator.create_service_instance("dovi_conversion", job, {})
 
 
-def test_create_service_instance_does_not_hide_service_bugs():
+def test_create_service_instance_does_not_hide_service_bugs(job):
     """An AttributeError raised inside from_message is a bug and must not look like a skip."""
     with mock.patch.object(WorkerConfig, "__init__", return_value=None):
         orchestrator = ServiceOrchestrator("item_added")
@@ -590,7 +571,7 @@ def test_create_service_instance_does_not_hide_service_bugs():
         mock.patch("workers.services.orchestrator.importlib.import_module", return_value=module),
         pytest.raises(AttributeError),
     ):
-        orchestrator.create_service_instance("dovi_conversion", {}, {})
+        orchestrator.create_service_instance("dovi_conversion", job, {})
 
 
 def test_process_webhook_unknown_service_fails_instead_of_acking(orchestrator):
@@ -740,31 +721,17 @@ def test_process_webhook_does_not_retry_a_playlist_service_that_got_a_401(orches
     assert result.outcome is Outcome.FAILED
 
 
-def test_process_webhook_does_not_track_a_temp_dir_for_services_without_one(orchestrator):
-    """Services like metadata_update have no tmp_dir, so there is nothing to clean up."""
-    _enable_services(orchestrator, ["metadata_update"])
-    service = mock.MagicMock(spec=ServiceBase)  # spec'd, so `tmp_dir` does not exist
-
-    with mock.patch.object(ServiceOrchestrator, "create_service_instance", return_value=service):
-        result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
-
-    assert result == ProcessingResult.success()
-    assert orchestrator.temp_dirs == set()
-
-
 @pytest.mark.parametrize("item_type", ["Episode", "Series", "Season", "Audio"])
 def test_process_webhook_skips_file_services_for_non_movie_items(orchestrator, item_type):
     """A TV episode or song is never under MEDIA_PATHS: skip it, don't retry until dead."""
     _enable_services(orchestrator, ["metadata_update", "dovi_conversion", "media_track_clean"])
     message = {"Name": "Pilot", "Year": 2023, "ItemType": item_type, "ItemId": "1"}
 
-    with mock.patch.object(
-        ServiceBase, "file_from_message", side_effect=MediaNotFoundError("No video")
-    ) as file_from_message:
+    with mock.patch("workers.job.find_media_file") as find:
         result = orchestrator.process_webhook(message)
 
     assert result.outcome is Outcome.SUCCESS
-    file_from_message.assert_not_called()
+    find.assert_not_called()
 
 
 def _jellyfin_unreachable() -> MetadataUpdateError:
@@ -790,3 +757,96 @@ def test_process_webhook_retries_metadata_update_when_jellyfin_is_down(orchestra
         result = orchestrator.process_webhook({"Name": "Test Movie", "Year": 2023})
 
     assert result.outcome is Outcome.RETRY
+
+
+# --- The real build path: orchestrator, Job and services together over a temporary media tree ---
+
+
+@pytest.fixture
+def real_orchestrator(orchestrator, media_dir):
+    """The orchestrator pointed at the temporary media tree, with the real services enabled."""
+    orchestrator.media_paths = (media_dir["standup_path"], media_dir["movie_path"])
+    orchestrator.temp_dir = media_dir["tmp_path"]
+    return orchestrator
+
+
+STREAMS_TO_TRIM = {
+    "streams": [
+        {"index": 0, "codec_type": "video"},
+        {"index": 1, "codec_type": "audio", "tags": {"language": "eng"}},
+        {"index": 2, "codec_type": "audio", "tags": {"language": "spa"}},
+    ]
+}
+KEEP_EVERYTHING = {
+    "streams": [
+        {"index": 0, "codec_type": "video"},
+        {"index": 1, "codec_type": "audio", "disposition": {"default": 1}},
+    ]
+}
+MOVIE_MESSAGE = {"Name": "Test Movie", "Year": 2023, "ItemType": "Movie", "ItemId": "1"}
+
+
+def test_the_media_file_is_located_once_for_the_whole_message(real_orchestrator):
+    _enable_services(real_orchestrator, ["metadata_update", "media_track_clean"])
+
+    with (
+        mock.patch("workers.job.find_media_file", wraps=find_media_file) as find,
+        mock.patch("workers.services.metadata_update.get_client"),
+        mock.patch(
+            "workers.services.media_track_clean.run_command",
+            return_value=mock.Mock(stdout=json.dumps(KEEP_EVERYTHING)),
+        ),
+    ):
+        result = real_orchestrator.process_webhook(MOVIE_MESSAGE)
+
+    assert result == ProcessingResult.success()
+    find.assert_called_once()
+
+
+def test_scratch_space_is_removed_after_a_failure_part_way_through_exec(
+    real_orchestrator, media_dir
+):
+    _enable_services(real_orchestrator, ["media_track_clean"])
+    real_orchestrator.worker_config.get_enabled_services.return_value[0]["config"] = {
+        "keep_audio_langs": ["eng"],
+        "keep_original": False,
+        "keep_default": False,
+    }
+    run_command = mock.Mock(
+        side_effect=[
+            mock.Mock(stdout=json.dumps(STREAMS_TO_TRIM)),
+            subprocess.CalledProcessError(1, ["ffmpeg"], stderr="boom"),
+        ]
+    )
+
+    with mock.patch("workers.services.media_track_clean.run_command", run_command):
+        result = real_orchestrator.process_webhook(MOVIE_MESSAGE)
+
+    assert result.outcome is Outcome.FAILED
+    assert run_command.call_count == 2  # the failure really was mid-exec, after scratch was made
+    assert list(Path(media_dir["tmp_path"]).iterdir()) == []
+    assert Path(media_dir["movie_file"]).read_text() == "movie content"
+
+
+@pytest.mark.parametrize("service", ["dovi_conversion", "media_track_clean"])
+def test_a_missing_media_file_is_retried_by_every_file_service(real_orchestrator, service):
+    _enable_services(real_orchestrator, [service])
+
+    result = real_orchestrator.process_webhook({**MOVIE_MESSAGE, "Name": "Not Here"})
+
+    assert result.outcome is Outcome.RETRY
+
+
+def test_services_that_need_no_scratch_space_leave_the_temp_dir_empty(real_orchestrator, media_dir):
+    _enable_services(real_orchestrator, ["metadata_update", "media_track_clean"])
+
+    with (
+        mock.patch("workers.services.metadata_update.get_client"),
+        mock.patch(
+            "workers.services.media_track_clean.run_command",
+            return_value=mock.Mock(stdout=json.dumps(KEEP_EVERYTHING)),
+        ),
+    ):
+        real_orchestrator.process_webhook(MOVIE_MESSAGE)
+
+    assert list(Path(media_dir["tmp_path"]).iterdir()) == []

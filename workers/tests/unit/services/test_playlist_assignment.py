@@ -71,22 +71,30 @@ def _build_service(
     )
 
 
-def test_from_message_populates_service_fields() -> None:
-    message = {"ItemId": "abc123"}
+def test_from_message_populates_service_fields(make_job) -> None:
+    job = make_job({"ItemId": "abc123"})
     rules = [{"playlist_id": "playlist"}]
     with patch("workers.services.playlist_assignment.get_client"):
-        service = PlaylistAssignmentService.from_message(message, {"rules": rules})
+        service = PlaylistAssignmentService.from_message(job, {"rules": rules})
 
     assert service.item_id == "abc123"
     assert service.rules == rules
 
 
-def test_from_message_requires_rule_list() -> None:
-    message = {"ItemId": "abc123"}
+def test_from_message_requires_rule_list(make_job) -> None:
     config = {"rules": {"not": "a list"}}
 
     with pytest.raises(PlaylistAssignmentError):
-        PlaylistAssignmentService.from_message(message, config)
+        PlaylistAssignmentService.from_message(make_job({"ItemId": "abc123"}), config)
+
+
+def test_from_message_does_not_need_a_media_file(make_job) -> None:
+    """The service never touches the file, so an item with none on disk is not an error."""
+    job = make_job({"ItemId": "abc123", "Name": "Not On Disk", "Year": 2023})
+
+    service = PlaylistAssignmentService.from_message(job, {"rules": []})
+
+    assert service.item_id == "abc123"
 
 
 def test_exec_without_item_id_raises_error() -> None:
@@ -501,26 +509,28 @@ def test_enrich_item_details_raises_a_retryable_error_when_jellyfin_is_down() ->
     http.request.assert_not_called()
 
 
-def test_from_message_does_not_connect_to_jellyfin() -> None:
+def test_from_message_does_not_connect_to_jellyfin(make_job) -> None:
     with patch("workers.services.playlist_assignment.get_client") as get_client:
-        PlaylistAssignmentService.from_message({"ItemId": "abc123"}, {"rules": []})
+        PlaylistAssignmentService.from_message(make_job({"ItemId": "abc123"}), {"rules": []})
 
     get_client.assert_not_called()
 
 
-def test_exec_with_no_rules_needs_no_jellyfin() -> None:
+def test_exec_with_no_rules_needs_no_jellyfin(make_job) -> None:
     """With nothing to do, an outage must not fail (and retry) the message."""
     unavailable = JellyfinUnavailableError("down")
     with patch("workers.services.playlist_assignment.get_client", side_effect=unavailable):
-        service = PlaylistAssignmentService.from_message({"ItemId": "abc123"}, {"rules": []})
+        service = PlaylistAssignmentService.from_message(
+            make_job({"ItemId": "abc123"}), {"rules": []}
+        )
         service.exec()
 
 
-def test_exec_connects_lazily_and_a_failed_connection_is_retryable() -> None:
+def test_exec_connects_lazily_and_a_failed_connection_is_retryable(make_job) -> None:
     unavailable = JellyfinUnavailableError("down")
     with patch("workers.services.playlist_assignment.get_client", side_effect=unavailable):
         service = PlaylistAssignmentService.from_message(
-            {"ItemId": "abc123", "RunTimeTicks": None},
+            make_job({"ItemId": "abc123", "RunTimeTicks": None}),
             {"rules": [{"playlist_id": "p", "conditions": {}}]},
         )
         with pytest.raises(PlaylistAssignmentError) as exc_info:

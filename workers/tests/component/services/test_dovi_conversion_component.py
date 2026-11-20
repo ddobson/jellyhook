@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from workers import fileops, utils
+from workers import utils
 from workers.services import DoviConversionService
 
 DOVI_PROFLE_7 = 7
@@ -144,16 +144,13 @@ def test_p7_conversion_end_to_end(p7_service, run_command_mock, leftovers_beside
     assert leftovers_beside(movie_path) == []
 
 
-def test_p7_conversion_is_idempotent(p7_service):
+def test_p7_conversion_is_idempotent(p7_service, media_job):
     """Running the job twice (a redelivered message) leaves the finished file alone."""
     movie_path = pathlib.Path(p7_service.movie.full_path)
     p7_service.exec()
     converted = movie_path.read_bytes()
 
-    again = DoviConversionService(
-        p7_service.movie, fileops.make_job_dir(movie_path.parent.parent / "scratch", "again")
-    )
-    again.exec()
+    DoviConversionService(media_job("DoVi P7 Test File")).exec()
 
     assert movie_path.read_bytes() == converted
 

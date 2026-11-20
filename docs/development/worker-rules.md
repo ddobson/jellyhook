@@ -62,11 +62,19 @@ owning its own connection), `topology.py` (the work/retry/dead queue names and d
   timeout. Pass `ok_returncodes=(0, 1)` for tools that use 1 for "warnings" (mkvmerge).
 - **Replace the original only once the replacement is in place.** Use `fileops.replace_file`. It
   swaps atomically and handles scratch space on another filesystem.
-- **Every job gets its own scratch directory** from `fileops.make_job_dir`, never one named after
-  the title. The orchestrator registers a service's `tmp_dir` before `exec()` and removes it in a
-  `finally`, so failures clean up too.
-- **Services that rewrite a file expose it as `locked_path`.** The orchestrator holds a per-file
-  lock for the duration of `exec()`.
+- **The orchestrator builds one `Job` per message** (`workers/job.py`) and passes it to each
+  service's `from_message(job, service_config)`. Services ask the Job for what they need instead
+  of reading the raw message or config globals: `job.movie` / `job.media_file` (located once, on
+  first use, and only if some service asks), `job.item`, and `job.message`.
+- **Scratch space comes from `job.scratch_dir(label, base=...)`**, never a directory named after
+  the title. It is created on the call (so a service that skips its work creates nothing), every
+  call returns a new directory, and the Job removes them all when the message finishes, including
+  after a failure part-way through `exec()`. Pass the service's `temp_dir` setting as `base`; the
+  default comes from the orchestrator (`TEMP_DIR`). Services do not need to expose anything for
+  cleanup.
+- **Services that rewrite the media file set `modifies_media = True`** and swap the result in with
+  `job.replace_media_file()`. The orchestrator holds the Job's per-file lock for the duration of
+  `exec()`. A missing media file is `MediaNotFoundError` (retried) wherever it is detected.
 - **Get the Jellyfin client with `get_client()` at the point of use**, not at import time. It
   connects lazily and raises a retryable `JellyfinUnavailableError` when Jellyfin is down.
 

@@ -1,3 +1,4 @@
+import pathlib
 from typing import Any
 from unittest import mock
 
@@ -14,41 +15,41 @@ def mock_client():
         yield get_client.return_value.jellyfin
 
 
-@mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
-@mock.patch("workers.services.metadata_update.Movie.from_file")
-def test_metadata_update_service_init_from_message(
-    mock_from_file, mock_file_from_message, mock_message_standup
-):
+@pytest.fixture
+def standup_file(media_dir):
+    """Bobby Guy's stand-up special, as a file in the temporary stand-up library."""
+    folder = pathlib.Path(media_dir["standup_path"]) / "Bobby Guy (2023)"
+    folder.mkdir()
+    file = folder / "Bobby Guy 2023 2160p WEBRip x265 10bit HDR-SWTYBLZ.mkv"
+    file.write_text("standup content")
+    return file
+
+
+def test_metadata_update_service_init_from_message(make_job, standup_file, mock_message_standup):
     # Setup
-    file_path = "/data/media/stand-up/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv"
-    mock_file_from_message.return_value = file_path
-    mock_movie = mock.MagicMock()
-    mock_movie.full_path = file_path
-    mock_movie.full_title = "Bobby Guy (2023)"
-    mock_from_file.return_value = mock_movie
+    job = make_job(mock_message_standup)
 
     # Create service config
     service_config: dict[str, Any] = {"paths": [], "patterns": []}
 
     # Execute
-    service = MetadataUpdateService.from_message(mock_message_standup, service_config)
+    service = MetadataUpdateService.from_message(job, service_config)
 
     # Assert
     assert service.item_id == "123456"
     assert service.original_genres == ["Comedy", "Documentary"]
     assert service.original_tags == ["Netflix", "Special"]
     assert service.item_data == mock_message_standup
+    assert service.movie is job.movie
 
 
-@mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
-@mock.patch("workers.services.metadata_update.Movie.from_file")
 def test_from_message_accepts_list_shaped_genres_and_tags(
-    mock_from_file, mock_file_from_message, mock_message_standup
+    make_job, standup_file, mock_message_standup
 ):
     # Jellyfin can send Genres/Tags as JSON lists; this used to raise AttributeError on .split
     message = {**mock_message_standup, "Genres": ["Comedy", "Documentary"], "Tags": ["Netflix"]}
 
-    service = MetadataUpdateService.from_message(message, {"paths": [], "patterns": []})
+    service = MetadataUpdateService.from_message(make_job(message), {"paths": [], "patterns": []})
 
     assert service.original_genres == ["Comedy", "Documentary"]
     assert service.original_tags == ["Netflix"]
@@ -412,29 +413,17 @@ def test_exec_without_matching_rules(
     mock_update_metadata.assert_not_called()
 
 
-@mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
-@mock.patch("workers.services.metadata_update.Movie.from_file")
-def test_end_to_end_standup_path(
-    mock_from_file, mock_file_from_message, mock_message_standup, mock_client
-):
-    # Setup
-    file_path = "/data/media/stand-up/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv"
-    mock_file_from_message.return_value = file_path
-    mock_movie = mock.MagicMock()
-    mock_movie.full_path = file_path
-    mock_movie.full_title = "Bobby Guy (2023)"
-    mock_from_file.return_value = mock_movie
-
+def test_end_to_end_standup_path(make_job, standup_file, mock_message_standup, mock_client):
     # Execute
     service_config = {
         "paths": [
             {
-                "path": "/data/media/stand-up",
+                "path": str(standup_file.parent.parent),
                 "genres": {"new_genres": ["Stand-Up"], "replace_existing": True},
             }
         ]
     }
-    service = MetadataUpdateService.from_message(mock_message_standup, service_config)
+    service = MetadataUpdateService.from_message(make_job(mock_message_standup), service_config)
     service.exec()
 
     # Assert - should match path rule and update genres
@@ -444,19 +433,7 @@ def test_end_to_end_standup_path(
     )
 
 
-@mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
-@mock.patch("workers.services.metadata_update.Movie.from_file")
-def test_end_to_end_pattern_match(
-    mock_from_file, mock_file_from_message, mock_message_standup, mock_client
-):
-    # Setup
-    file_path = "/data/media/movies/Bobby Guy (2023)/Bobby.Guy.2023.2160p.WEBRip.x265.10bit.HDR.DTS-HD.MA.5.1-SWTYBLZ.mkv"
-    mock_file_from_message.return_value = file_path
-    mock_movie = mock.MagicMock()
-    mock_movie.full_path = file_path
-    mock_movie.full_title = "Bobby Guy (2023)"
-    mock_from_file.return_value = mock_movie
-
+def test_end_to_end_pattern_match(make_job, standup_file, mock_message_standup, mock_client):
     # Execute
     # Add Overview field to mock_message_standup for pattern matching
     mock_message_standup["Overview"] = "The comedian performs a set at Boston's Symphony Hall."
@@ -470,7 +447,7 @@ def test_end_to_end_pattern_match(
             }
         ]
     }
-    service = MetadataUpdateService.from_message(mock_message_standup, service_config)
+    service = MetadataUpdateService.from_message(make_job(mock_message_standup), service_config)
     service.exec()
 
     # Assert - should match pattern rule and add genre without replacing

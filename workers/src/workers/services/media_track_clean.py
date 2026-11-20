@@ -4,10 +4,8 @@ import pathlib
 import subprocess
 from typing import Sequence
 
-from workers import fileops
-from workers.config import TEMP_DIR
+from workers.job import Job
 from workers.logger import logger
-from workers.models.movie import Movie
 from workers.services.service_base import ServiceBase
 from workers.utils import run_command
 
@@ -96,73 +94,57 @@ class MediaTrackCleanConfig:
         self.keep_audio_langs = keep_audio_langs or []
         self.keep_sub_langs = keep_sub_langs or []
 
-    @classmethod
-    def from_dict(cls, config: dict) -> "MediaTrackCleanConfig":
-        """Create a configuration from a dictionary.
-
-        Args:
-            config: The configuration dictionary.
-
-        Returns:
-            A MediaTrackCleanConfig instance.
-        """
-        return cls(
-            keep_original=config.get("keep_original", True),
-            keep_default=config.get("keep_default", True),
-            keep_audio_langs=config.get("keep_audio_langs", []),
-            keep_sub_langs=config.get("keep_sub_langs", []),
-        )
-
 
 class MediaTrackCleanService(ServiceBase):
     """Service to clean up media tracks based on configured rules."""
 
     movies_only = True
+    modifies_media = True
 
     def __init__(
         self,
-        movie: Movie,
+        job: Job,
         keep_original: bool = True,
         keep_default: bool = True,
         keep_audio_langs: list[str] | None = None,
         keep_sub_langs: list[str] | None = None,
-        temp_dir: str = TEMP_DIR,
+        temp_dir: str | None = None,
     ) -> None:
         """Initialize the media track clean service.
 
         Args:
-            movie: The movie to clean up media tracks for.
+            job: The message's job, which owns the movie file and scratch space.
             keep_original: Whether to keep original tracks.
             keep_default: Whether to keep default tracks.
             keep_audio_langs: List of languages to keep for audio tracks.
             keep_sub_langs: List of languages to keep for subtitle tracks.
-            temp_dir: Where to create this run's scratch directory.
+            temp_dir: Where to create scratch space. Defaults to the job's.
         """
-        self.movie = movie
+        self.job = job
+        self.movie = job.movie
         self.config = MediaTrackCleanConfig(
             keep_original=keep_original,
             keep_default=keep_default,
             keep_audio_langs=keep_audio_langs or [],
             keep_sub_langs=keep_sub_langs or [],
         )
-        # Only a path for now; the directory is created in exec(), if there is work to do
-        self.tmp_dir = fileops.job_dir_path(temp_dir, "media_track_clean")
+        self._temp_dir = temp_dir
+        self._tmp_dir: pathlib.Path | None = None
         logger.info(
-            f"Initialized MediaTrackCleanService for {movie.full_title} with config: "
+            f"Initialized MediaTrackCleanService for {self.movie.full_title} with config: "
             f"keep_original={keep_original}, keep_default={keep_default}, "
             f"keep_audio_langs={keep_audio_langs}, keep_sub_langs={keep_sub_langs}"
         )
 
     @property
-    def locked_path(self) -> pathlib.Path:
-        """The movie file this service rewrites."""
-        return pathlib.Path(self.movie.full_path)
+    def tmp_dir(self) -> pathlib.Path:
+        """The scratch directory for this run, created on first use (only if there is work)."""
+        if self._tmp_dir is None:
+            self._tmp_dir = self.job.scratch_dir("media_track_clean", base=self._temp_dir)
+        return self._tmp_dir
 
     def exec(self) -> None:
         """Execute the media track clean service."""
-        if not os.path.exists(self.movie.full_path):
-            raise FileNotFoundError(f"Movie file not found: {self.movie.full_path}")
-
         # Get media streams info
         streams = self._get_media_streams()
         logger.info(f"Found {len(streams)} streams in {self.movie.full_title}")
@@ -178,7 +160,6 @@ class MediaTrackCleanService(ServiceBase):
             )
             return
 
-        self.tmp_dir.mkdir(parents=True, exist_ok=True)
         output_file = self._create_output_file_path()
 
         # Generate and execute ffmpeg command to remove unwanted tracks
@@ -339,28 +320,25 @@ class MediaTrackCleanService(ServiceBase):
         """
         # One atomic swap. The old backup-rename-delete dance had a window where the movie
         # existed only as "<name>.bak", which no library scan would pick up.
-        fileops.replace_file(output_file, pathlib.Path(self.movie.full_path))
+        self.job.replace_media_file(output_file)
         logger.info(f"Replaced {self.movie.full_path} with the cleaned file")
 
     @classmethod
-    def from_message(cls, message: dict, service_config: dict) -> "ServiceBase":
-        """Called when a message is received from the queue.
+    def from_message(cls, job: Job, service_config: dict) -> "MediaTrackCleanService":
+        """Create a MediaTrackCleanService for a message.
 
         Args:
-            message: The message to be processed.
+            job: The message's job.
             service_config: The configuration for the service.
 
         Returns:
-            ServiceBase: An instance of the service.
+            MediaTrackCleanService: An instance of the service.
         """
-        movie_file = cls.file_from_message(message)
-        movie = Movie.from_file(movie_file)
-        kwargs = {
-            "keep_original": service_config.get("keep_original", True),
-            "keep_default": service_config.get("keep_default", True),
-            "keep_audio_langs": service_config.get("keep_audio_langs", []),
-            "keep_sub_langs": service_config.get("keep_sub_langs", []),
-            "temp_dir": service_config.get("temp_dir", TEMP_DIR),
-        }
-
-        return cls(movie, **kwargs)
+        return cls(
+            job,
+            keep_original=service_config.get("keep_original", True),
+            keep_default=service_config.get("keep_default", True),
+            keep_audio_langs=service_config.get("keep_audio_langs", []),
+            keep_sub_langs=service_config.get("keep_sub_langs", []),
+            temp_dir=service_config.get("temp_dir"),
+        )

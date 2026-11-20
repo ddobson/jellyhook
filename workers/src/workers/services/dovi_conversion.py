@@ -3,11 +3,10 @@ import json
 import pathlib
 from typing import Any
 
-from workers import fileops, utils
-from workers.config import TEMP_DIR
+from workers import utils
 from workers.errors import WebhookWorkerError
+from workers.job import Job
 from workers.logger import logger
-from workers.models.movie import Movie
 from workers.services.service_base import ServiceBase
 
 DOVI_PROFLE_7 = 7
@@ -21,25 +20,30 @@ class DoviConversionService(ServiceBase):
     """Service to convert Dolby Vision Profile 7.x to 8.x."""
 
     movies_only = True
+    modifies_media = True
 
-    def __init__(self, movie: Movie, tmp_dir: pathlib.Path) -> None:
+    def __init__(self, job: Job, temp_dir: str | None = None) -> None:
         """Initialize the DoviConversionService.
 
         Args:
-            movie (Movie): The movie to convert.
-            tmp_dir (pathlib.Path): The location to store temporary files.
+            job (Job): The message's job, which owns the movie file and scratch space.
+            temp_dir (str | None): Where to create scratch space. Defaults to the job's.
 
         Returns:
             None
 
         """
-        self.movie = movie
-        self.tmp_dir = tmp_dir
+        self.job = job
+        self.movie = job.movie
+        self._temp_dir = temp_dir
+        self._tmp_dir: pathlib.Path | None = None
 
     @property
-    def locked_path(self) -> pathlib.Path:
-        """The movie file this service rewrites."""
-        return pathlib.Path(self.movie.full_path)
+    def tmp_dir(self) -> pathlib.Path:
+        """The scratch directory for this run, created on first use and removed by the Job."""
+        if self._tmp_dir is None:
+            self._tmp_dir = self.job.scratch_dir(self.movie.folder_title, base=self._temp_dir)
+        return self._tmp_dir
 
     def exec(self) -> None:
         """Execute the Dolby Vision conversion process.
@@ -78,7 +82,7 @@ class DoviConversionService(ServiceBase):
         final_output = self.merge_mkv(self.movie.full_path, p8_video_path)
 
         logger.info("Moving final ouput to media destination")
-        self.move_to_target(final_output, self.movie.full_path)
+        self.move_to_target(final_output)
 
         logger.info(f"Conversion complete for '{self.movie.full_title}'")
 
@@ -207,41 +211,30 @@ class DoviConversionService(ServiceBase):
         utils.run_command(cmd, ok_returncodes=(0, 1))
         return pathlib.Path(output_path)
 
-    def move_to_target(self, output_file: pathlib.Path, target: str) -> None:
-        """Swap the final output file in for the target, atomically.
+    def move_to_target(self, output_file: pathlib.Path) -> None:
+        """Swap the final output file in for the movie file, atomically.
 
-        The original is never deleted first: `fileops.replace_file` puts the new file next to it
-        and renames over it, so a failure at any point leaves the original in place.
+        The original is never deleted first: the Job puts the new file next to it and renames
+        over it, so a failure at any point leaves the original in place.
 
         Args:
             output_file (pathlib.Path): The path to the final output file.
-            target (str): The target destination for the final output file.
 
         Returns:
             None
 
         """
-        fileops.replace_file(output_file, pathlib.Path(target))
+        self.job.replace_media_file(output_file)
 
     @classmethod
-    def from_message(cls, message: dict, service_config: dict[str, Any]) -> "DoviConversionService":
-        """Create a DoviConversionService from a Jellyfin webhook message.
+    def from_message(cls, job: Job, service_config: dict[str, Any]) -> "DoviConversionService":
+        """Create a DoviConversionService for a message.
 
         Args:
-            message (dict): The Jellyfin webhook message.
+            job (Job): The message's job.
             service_config (dict): The service configuration options.
 
         Returns:
             DoviConversionService: The initialized DoviConversionService.
         """
-        # Get the configured temp directory or fall back to default
-        temp_directory = service_config.get("temp_dir", TEMP_DIR)
-
-        movie_file = cls.file_from_message(message)
-        movie = Movie.from_file(movie_file)
-
-        # A directory of its own for this run: keying it on the title let a redelivered message
-        # (or two queues) reuse each other's half-finished files.
-        tmp_dir = fileops.make_job_dir(temp_directory, movie.folder_title)
-        logger.info(f"Using temporary directory: {tmp_dir}")
-        return cls(movie, tmp_dir)
+        return cls(job, temp_dir=service_config.get("temp_dir"))

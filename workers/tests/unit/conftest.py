@@ -4,6 +4,7 @@ from unittest import mock
 import pytest
 
 from workers.config.worker_config import WorkerConfig
+from workers.job import Job
 
 
 @pytest.fixture
@@ -142,3 +143,25 @@ def mock_message_anime():
         "Tags": "Foreign, Subtitled",
         "Overview": "Two friends navigate the world of sumo wrestling and pizza delivery.",
     }
+
+
+@pytest.fixture
+def make_job(media_dir):
+    """Factory for real Jobs over the temporary media tree from `media_dir`.
+
+    Scratch space goes to `media_dir["tmp_path"]`. Every job is closed after the test.
+    """
+    jobs: list[Job] = []
+
+    def _make(message: dict, temp_dir: str | None = None) -> Job:
+        job = Job(
+            message,
+            media_paths=(media_dir["standup_path"], media_dir["movie_path"]),
+            temp_dir=temp_dir or media_dir["tmp_path"],
+        )
+        jobs.append(job)
+        return job
+
+    yield _make
+    for job in jobs:
+        job.close()

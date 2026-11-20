@@ -1,48 +1,17 @@
 import json
 import pathlib
-from typing import Any, Dict
 from unittest import mock
 
 import pytest
 
-from workers.errors import WebhookWorkerError
-from workers.models.movie import Movie
+from workers.errors import MediaNotFoundError, is_transient
 from workers.services.dovi_conversion import DoviConversionService
 
 
 @pytest.fixture
-def dovi_service_config() -> Dict[str, Any]:
-    """Create a test configuration for the Dolby Vision conversion service."""
-    return {"temp_dir": "/tmp/dovi_conversion"}
-
-
-@pytest.fixture
-def mock_movie():
-    """Create a mock movie object for testing."""
-    mock_file = mock.MagicMock(spec=pathlib.Path)
-    mock_file.name = "Test Movie (2023) [tmdbid-123] [x265] [DV] [TrueHD] [2160p]-RELEASE.mkv"
-    mock_file.resolve.return_value = (
-        "/path/to/Test Movie (2023) [tmdbid-123] [x265] [DV] [TrueHD] [2160p]-RELEASE.mkv"
-    )
-
-    return Movie(
-        file=mock_file,
-        title="Test Movie",
-        year="2023",
-        tmdb_id="123",
-        video_codec="x265",
-        dynamic_range="DV",
-        audio="TrueHD",
-        quality="2160p",
-        release_group="RELEASE",
-    )
-
-
-@pytest.fixture
-def dovi_service(mock_movie, media_dir):
-    """Create a DoviConversionService instance for testing."""
-    tmp_dir = pathlib.Path(f"{media_dir['tmp_path']}/{media_dir['movie_path']}")
-    return DoviConversionService(mock_movie, tmp_dir)
+def dovi_service(make_job):
+    """A DoviConversionService over a real Job for the movie in the temporary media tree."""
+    return DoviConversionService(make_job({"Name": "Test Movie", "Year": "2023"}))
 
 
 def test_get_dovi_profile_with_dovi(dovi_service):
@@ -149,69 +118,76 @@ def test_merge_mkv(dovi_service):
         assert result == pathlib.Path(f"{dovi_service.tmp_dir}/final_output.mkv")
 
 
-def test_move_to_target_swaps_the_file_in(dovi_service, tmp_path):
+def test_move_to_target_swaps_the_file_in(dovi_service, media_dir, tmp_path):
     """The converted file replaces the original in one step."""
-    target = tmp_path / "movie.mkv"
-    target.write_bytes(b"original")
     output_file = tmp_path / "final_output.mkv"
     output_file.write_bytes(b"converted")
 
-    dovi_service.move_to_target(output_file, str(target))
+    dovi_service.move_to_target(output_file)
 
-    assert target.read_bytes() == b"converted"
+    assert pathlib.Path(media_dir["movie_file"]).read_bytes() == b"converted"
     assert not output_file.exists()
 
 
-def test_move_to_target_failure_keeps_the_original(dovi_service, tmp_path):
+def test_move_to_target_failure_keeps_the_original(dovi_service, media_dir, tmp_path):
     """Nothing is deleted up front, so a failed swap cannot lose the movie."""
-    target = tmp_path / "movie.mkv"
-    target.write_bytes(b"original")
-    missing_output = tmp_path / "never_written.mkv"
-
     with pytest.raises(FileNotFoundError):
-        dovi_service.move_to_target(missing_output, str(target))
+        dovi_service.move_to_target(tmp_path / "never_written.mkv")
 
-    assert target.read_bytes() == b"original"
-    dovi_service.movie._file.unlink.assert_not_called()
-
-
-def test_locked_path_is_the_movie_file(dovi_service):
-    assert dovi_service.locked_path == pathlib.Path(dovi_service.movie.full_path)
+    assert pathlib.Path(media_dir["movie_file"]).read_text() == "movie content"
 
 
-def test_from_message_success(dovi_service_config, tmp_path):
-    """Test creating service from a message - success case."""
+def test_dovi_conversion_rewrites_the_media_file():
+    """The orchestrator locks the file for services that declare this."""
+    assert DoviConversionService.modifies_media is True
+
+
+def test_from_message_creates_no_scratch_dir_until_one_is_used(make_job, media_dir):
+    job = make_job({"Name": "Test Movie", "Year": "2023"})
+
+    service = DoviConversionService.from_message(job, {})
+
+    assert isinstance(service, DoviConversionService)
+    assert list(pathlib.Path(media_dir["tmp_path"]).iterdir()) == []
+
+    assert service.tmp_dir.parent == pathlib.Path(media_dir["tmp_path"])
+    assert service.tmp_dir.is_dir()
+
+
+def test_from_message_honours_the_configured_temp_dir(make_job, tmp_path):
+    job = make_job({"Name": "Test Movie", "Year": "2023"})
+
+    service = DoviConversionService.from_message(job, {"temp_dir": str(tmp_path / "dovi")})
+
+    assert service.tmp_dir.parent == tmp_path / "dovi"
+
+
+def test_scratch_dirs_differ_between_jobs_for_the_same_title(make_job):
+    """A redelivery of the same title must not reuse the previous run's files."""
     message = {"Name": "Test Movie", "Year": "2023"}
-    config = {"temp_dir": str(tmp_path)}
+    first = DoviConversionService.from_message(make_job(message), {})
+    second = DoviConversionService.from_message(make_job(message), {})
 
-    with (
-        mock.patch("workers.services.dovi_conversion.Movie.from_file") as mock_from_file,
-        mock.patch(
-            "workers.services.dovi_conversion.DoviConversionService.file_from_message"
-        ) as mock_file_from_message,
-    ):
-        mock_file = mock.MagicMock()
-        mock_file_from_message.return_value = mock_file
-        mock_movie = mock.MagicMock()
-        mock_movie.folder_title = "Test Movie (2023)"
-        mock_from_file.return_value = mock_movie
-
-        first = DoviConversionService.from_message(message, config)
-        second = DoviConversionService.from_message(message, config)
-
-    assert isinstance(first, DoviConversionService)
-    mock_file_from_message.assert_called_with(message)
-    mock_from_file.assert_called_with(mock_file)
-    # Same title, different scratch directories: a redelivery cannot reuse stale files
     assert first.tmp_dir != second.tmp_dir
-    assert first.tmp_dir.parent == tmp_path
-    assert first.tmp_dir.is_dir()
 
 
-def test_commands_are_argument_lists_with_paths_intact(dovi_service):
+def test_scratch_dir_is_removed_when_the_job_closes(make_job):
+    job = make_job({"Name": "Test Movie", "Year": "2023"})
+    service = DoviConversionService.from_message(job, {})
+    scratch = service.tmp_dir
+
+    job.close()
+
+    assert not scratch.exists()
+
+
+def test_commands_are_argument_lists_with_paths_intact(make_job, media_dir):
     """Odd characters in file names must reach the tools untouched (no shell is involved)."""
-    nasty = '/media/It\'s $(a) "Test" (2023)/movie; rm -rf x.mkv'
-    dovi_service.movie._file.resolve.return_value = nasty
+    folder = pathlib.Path(media_dir["movie_path"]) / 'It\'s $(a) "Test" (2023)'
+    folder.mkdir()
+    (folder / 'It\'s $(a) "Test" movie; rm -rf x.mkv').write_text("movie")
+    dovi_service = DoviConversionService(make_job({"Name": 'It\'s $(a) "Test"', "Year": "2023"}))
+    nasty = dovi_service.movie.full_path
 
     with mock.patch("workers.utils.run_command") as mock_run_command:
         mock_run_command.return_value.stdout = "{}"
@@ -227,15 +203,14 @@ def test_commands_are_argument_lists_with_paths_intact(dovi_service):
     assert mock_run_command.call_args_list[2].kwargs["ok_returncodes"] == (0, 1)
 
 
-def test_from_message_no_movie_found(dovi_service_config):
-    """Test creating service from a message - no movie found case."""
-    # Mock the message
-    message = {"Name": "Missing Movie", "Year": "2023"}
+def test_from_message_no_movie_found_is_transient(make_job):
+    """The file may simply not have landed yet, so the message is retried."""
+    job = make_job({"Name": "Missing Movie", "Year": "2023"})
 
-    with pytest.raises(WebhookWorkerError) as exc_info:
-        DoviConversionService.from_message(message, dovi_service_config)
+    with pytest.raises(MediaNotFoundError, match="No video found for 'Missing Movie'") as exc:
+        DoviConversionService.from_message(job, {})
 
-    assert str(exc_info.value) == "No video found for 'Missing Movie'"
+    assert is_transient(exc.value)
 
 
 @pytest.mark.parametrize(
