@@ -10,9 +10,8 @@ from jellyfin_apiclient_python.exceptions import HTTPException
 
 from workers.clients.jellyfin import JellyfinUnavailableError
 from workers.errors import is_transient
+from workers.models.item import TICKS_PER_MINUTE
 from workers.services.playlist_assignment import (
-    SECONDS_PER_MINUTE,
-    TICKS_PER_SECOND,
     PlaylistAssignmentError,
     PlaylistAssignmentService,
 )
@@ -34,7 +33,7 @@ def _make_client(
 
 
 def _make_runtime_ticks(minutes: float) -> float:
-    return minutes * SECONDS_PER_MINUTE * TICKS_PER_SECOND
+    return minutes * TICKS_PER_MINUTE
 
 
 def _build_service(
@@ -401,35 +400,12 @@ def test_post_playlist_items_requires_post_helper() -> None:
         service._post_playlist_items("playlist-123")
 
 
-def test_extract_runtime_minutes_uses_embedded_item_ticks() -> None:
-    minutes = 42
-    details = {"Item": {"RunTimeTicks": _make_runtime_ticks(minutes)}}
-
-    extracted = PlaylistAssignmentService._extract_runtime_minutes(details)
-
-    assert extracted == pytest.approx(minutes)
-
-
-def test_extract_release_year_from_premiere_date() -> None:
-    details = {"PremiereDate": "2010-05-04T00:00:00Z"}
-    invalid_details = {"PremiereDate": "Year"}
-
-    assert PlaylistAssignmentService._extract_release_year(details) == 2010
-    assert PlaylistAssignmentService._extract_release_year(invalid_details) is None
-
-
 def test_to_float_handles_invalid_values() -> None:
     assert PlaylistAssignmentService._to_float("not-a-number") is None
 
 
 def test_to_int_handles_invalid_values() -> None:
     assert PlaylistAssignmentService._to_int("not-a-number") is None
-
-
-def test_extract_list_field_normalizes_values() -> None:
-    assert PlaylistAssignmentService._extract_list_field({}, "Tags") == []
-    assert PlaylistAssignmentService._extract_list_field({"Tags": "A, B"}, "Tags") == ["A", "B"]
-    assert PlaylistAssignmentService._extract_list_field({"Tags": 42}, "Tags") == ["42"]
 
 
 def test_normalize_str_iterable_handles_various_inputs() -> None:

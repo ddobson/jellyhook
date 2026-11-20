@@ -40,6 +40,20 @@ def test_metadata_update_service_init_from_message(
     assert service.item_data == mock_message_standup
 
 
+@mock.patch("workers.services.metadata_update.MetadataUpdateService.file_from_message")
+@mock.patch("workers.services.metadata_update.Movie.from_file")
+def test_from_message_accepts_list_shaped_genres_and_tags(
+    mock_from_file, mock_file_from_message, mock_message_standup
+):
+    # Jellyfin can send Genres/Tags as JSON lists; this used to raise AttributeError on .split
+    message = {**mock_message_standup, "Genres": ["Comedy", "Documentary"], "Tags": ["Netflix"]}
+
+    service = MetadataUpdateService.from_message(message, {"paths": [], "patterns": []})
+
+    assert service.original_genres == ["Comedy", "Documentary"]
+    assert service.original_tags == ["Netflix"]
+
+
 def test_find_matching_rules_path_match(mock_movie_standup):
     # Setup
     path_rules = [

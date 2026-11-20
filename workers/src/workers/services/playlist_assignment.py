@@ -7,10 +7,8 @@ import requests
 from workers.clients.jellyfin import get_client
 from workers.errors import WebhookWorkerError, is_transient
 from workers.logger import logger
+from workers.models.item import Item
 from workers.services.service_base import ServiceBase
-
-TICKS_PER_SECOND = 10_000_000
-SECONDS_PER_MINUTE = 60
 
 
 class PlaylistAssignmentError(WebhookWorkerError):
@@ -57,7 +55,7 @@ class PlaylistAssignmentService(ServiceBase):
             return
 
         item_details = self._load_item_details()
-        runtime_minutes = self._extract_runtime_minutes(item_details)
+        runtime_minutes = Item.from_message(item_details).runtime_minutes
         matches = 0
 
         for rule in self.rules:
@@ -85,7 +83,7 @@ class PlaylistAssignmentService(ServiceBase):
                 "Playlist service configuration must include a list of rules"
             )
 
-        item_id = message.get("ItemId") or ""
+        item_id = Item.from_message(message).item_id or ""
         return cls(item_id=item_id, message=message, rules=rules)
 
     def _load_item_details(self) -> dict[str, Any]:
@@ -107,11 +105,13 @@ class PlaylistAssignmentService(ServiceBase):
 
     def _has_sufficient_metadata(self, details: dict[str, Any]) -> bool:
         """Return True when the webhook payload already contains required fields."""
-        runtime_present = self._extract_runtime_minutes(details) is not None
-        has_genres = bool(self._extract_list_field(details, "Genres"))
-        has_tags = bool(self._extract_list_field(details, "Tags"))
-        has_year = self._extract_release_year(details) is not None
-        return runtime_present and has_genres and has_tags and has_year
+        item = Item.from_message(details)
+        return (
+            item.runtime_minutes is not None
+            and bool(item.genres)
+            and bool(item.tags)
+            and item.year is not None
+        )
 
     def _enrich_item_details(self) -> None:
         """Fetch additional item metadata from Jellyfin when needed.
@@ -152,34 +152,33 @@ class PlaylistAssignmentService(ServiceBase):
             logger.warning("Playlist rule missing conditions mapping: {}", rule)
             return False
 
-        item_type = item_details.get("ItemType") or item_details.get("Type")
+        item = Item.from_message(item_details)
         allowed_types = self._normalize_str_iterable(conditions.get("item_types"))
-        if allowed_types and (item_type or "").lower() not in allowed_types:
+        if allowed_types and (item.item_type or "").lower() not in allowed_types:
             return False
 
-        runtime_minutes = runtime_minutes or self._extract_runtime_minutes(item_details)
+        runtime_minutes = runtime_minutes or item.runtime_minutes
         if not self._evaluate_runtime(conditions, runtime_minutes):
             return False
 
-        release_year = self._extract_release_year(item_details)
-        if not self._evaluate_release_year(conditions, release_year):
+        if not self._evaluate_release_year(conditions, item.year):
             return False
 
         required_genres = self._normalize_str_iterable(conditions.get("required_genres"))
         if required_genres:
-            genres = self._normalize_str_iterable(self._extract_list_field(item_details, "Genres"))
+            genres = self._normalize_str_iterable(item.genres)
             if not genres or not required_genres.issubset(genres):
                 return False
 
         required_tags = self._normalize_str_iterable(conditions.get("required_tags"))
         if required_tags:
-            tags = self._normalize_str_iterable(self._extract_list_field(item_details, "Tags"))
+            tags = self._normalize_str_iterable(item.tags)
             if not tags or not required_tags.issubset(tags):
                 return False
 
         excluded_tags = self._normalize_str_iterable(conditions.get("excluded_tags"))
         if excluded_tags:
-            tags = self._normalize_str_iterable(self._extract_list_field(item_details, "Tags"))
+            tags = self._normalize_str_iterable(item.tags)
             if tags and tags.intersection(excluded_tags):
                 return False
 
@@ -310,38 +309,6 @@ class PlaylistAssignmentService(ServiceBase):
         return str(item_id or "").replace("-", "").lower()
 
     @staticmethod
-    def _extract_runtime_minutes(details: dict[str, Any]) -> float | None:
-        """Extract runtime in minutes using the Jellyfin `RunTimeTicks` field."""
-        ticks = details.get("RunTimeTicks") or details.get("RuntimeTicks")
-        if ticks is None and isinstance(details.get("Item"), dict):
-            embedded = details["Item"]
-            ticks = embedded.get("RunTimeTicks") or embedded.get("RuntimeTicks")
-
-        if isinstance(ticks, (int, float)):
-            seconds = ticks / TICKS_PER_SECOND
-            return seconds / SECONDS_PER_MINUTE
-
-        return None
-
-    @staticmethod
-    def _extract_release_year(details: dict[str, Any]) -> int | None:
-        """Extract release year from Jellyfin payload using common field names."""
-        for key in ("ProductionYear", "Year"):
-            value = details.get(key)
-            year = PlaylistAssignmentService._to_int(value)
-            if year is not None:
-                return year
-
-        premiere_date = details.get("PremiereDate") or details.get("DateCreated")
-        if isinstance(premiere_date, str) and len(premiere_date) >= 4:
-            try:
-                return int(premiere_date[:4])
-            except ValueError:
-                return None
-
-        return None
-
-    @staticmethod
     def _to_float(value: Any) -> float | None:
         """Attempt to coerce a value into a float, returning None on failure."""
         if value is None or value == "":
@@ -360,18 +327,6 @@ class PlaylistAssignmentService(ServiceBase):
             return int(value)
         except (TypeError, ValueError):
             return None
-
-    @staticmethod
-    def _extract_list_field(details: dict[str, Any], field: str) -> list[str]:
-        """Normalize comma-separated strings or lists into a flat list of strings."""
-        raw = details.get(field)
-        if raw is None:
-            return []
-        if isinstance(raw, str):
-            return [part.strip() for part in raw.split(",") if part.strip()]
-        if isinstance(raw, Iterable):
-            return [str(item).strip() for item in raw if str(item).strip()]
-        return [str(raw).strip()]
 
     @staticmethod
     def _normalize_str_iterable(value: Any) -> set[str]:
