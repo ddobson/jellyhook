@@ -10,6 +10,7 @@ from workers.models.item import Item
         (["Science Fiction", " Horror "], ("Science Fiction", "Horror")),
         ("Comedy, , Drama,", ("Comedy", "Drama")),
         (["Comedy", "", "  "], ("Comedy",)),
+        (42, ("42",)),
         ("", ()),
         (None, ()),
     ],
