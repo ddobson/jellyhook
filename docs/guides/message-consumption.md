@@ -87,8 +87,9 @@ cause is hidden and the failure is treated as permanent.
 A message with several failures is retried if *any* of them is retryable. The permanent one will
 simply fail again and the message ends up on `.dead`.
 
-`metadata_update` is the exception to "a failure fails the message": its errors are logged but
-never fail the event.
+`metadata_update` is the exception to "a failure fails the message": its permanent errors are
+logged but never fail the event. A retryable one (Jellyfin unreachable) still does, so the update
+is retried rather than lost.
 
 ### How many tries
 
@@ -122,7 +123,7 @@ sit in the queue as "ready".
 | 20:45 | Item A finishes and is acknowledged. The queue now shows one fewer message. |
 | 20:45 | Item B is delivered, takes a few seconds and is acknowledged. |
 | 20:45 | **Item C**: the services that need the file raise "no video found". That is retryable, so a copy goes to `.retry` (attempt 1) and the original is acknowledged. The worker moves on without waiting. |
-| 20:45 | **Item D**: the playlist service cannot reach Jellyfin, which is retryable. The metadata service fails the same way, but its errors never fail an event. The message goes to `.retry`. |
+| 20:45 | **Item D**: the playlist service cannot reach Jellyfin, which is retryable. The metadata service fails the same way, and because the failure is retryable it counts too. The message goes to `.retry`. |
 | 20:45 | **Item E**: the conversion error is permanent. The message goes straight to `.dead` with the reason in its headers. |
 | 20:46 | The 60-second delay on `.retry` expires. Items C and D return to the work queue and are processed again. If the copy has finished and Jellyfin is back, both succeed on their second attempt. |
 
@@ -267,9 +268,8 @@ These are properties of the current design, worth keeping in mind when reading t
   - `media_track_clean`: safe. After cleaning, every remaining stream is one it wants to keep, so a
     repeat does nothing.
   - `metadata_update`: safe. It only sends changes when the computed genres or tags differ.
-  - `playlist_assignment`: **not verified.** It POSTs the item to each matching playlist every
-    time. Whether Jellyfin ignores an item that is already in the playlist depends on the Jellyfin
-    version, and that has not been checked.
+  - `playlist_assignment`: safe. Before adding, it fetches the playlist's items and skips the
+    POST if the item is already there.
 - **At-least-once, not exactly-once.** After a crash or disconnect the same event can be processed
   twice.
 - **`metadata_update` and outages.** Its permanent failures are logged and ignored, but if

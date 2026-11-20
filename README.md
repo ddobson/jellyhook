@@ -8,8 +8,11 @@ A microservice architecture for processing Jellyfin media server events via webh
 - **Asynchronous Processing**: Decoupled architecture using RabbitMQ for reliable message queuing
 - **Media Processing**: Specialized handlers for different Jellyfin events
 - **Dolby Vision Conversion**: Automatic conversion from Dolby Vision Profile 7.x to 8.x format
+- **Track Cleaning**: Removes unwanted audio and subtitle tracks from media files
+- **Playlist Assignment**: Adds items to Jellyfin playlists based on rules (runtime, genre, tags, year)
 - **User Configuration**: Support for custom webhook and service configuration via YAML/JSON
-- **Prioritized Services**: Execute services in configurable priority order 
+- **Prioritized Services**: Execute services in configurable priority order
+- **Reliable Delivery**: At-least-once delivery with retries and a dead-letter queue
 - **Metadata Management**: Configurable metadata updates based on file paths or content patterns
 - **Multi-platform Support**: Docker images for both ARM64 and AMD64 architectures
 
@@ -27,27 +30,33 @@ jellyhook/
 ├── api/                  # API service
 │   ├── src/api/          # API source code
 │   │   ├── hooks/        # Webhook handlers
-│   │   └── ...          
-│   └── tests/            # API tests
+│   │   └── ...
+│   └── tests/            # API tests (unit, plus integration/ against a real RabbitMQ)
 ├── workers/              # Worker service
 │   ├── src/workers/      # Worker source code
-│   │   ├── clients/      # Client implementations (Jellyfin, RabbitMQ)
+│   │   ├── clients/      # Client implementations (Jellyfin, RabbitMQ, retry policy)
 │   │   ├── config/       # Configuration handling
+│   │   ├── models/       # Item and Movie models
+│   │   ├── parsers/      # Movie filename parsers
 │   │   ├── services/     # Service implementations
 │   │   └── ...
 │   └── tests/            # Worker tests
-│       ├── component/    # Component/integration tests
-│       └── unit/         # Unit tests
-└── docs/examples/        # Example configuration files
-    ├── jellyhook.example.json    # Example webhook configuration
-    └── jellyhook.example.yaml    # Example webhook configuration
+│       ├── unit/         # Unit tests
+│       ├── component/    # Tests that run the real media tools
+│       └── integration/  # Tests against a real RabbitMQ (need Docker)
+├── docs/                 # Documentation
+│   ├── development/      # Rules, setup, code style and testing for contributors
+│   ├── guides/           # Configuration, Docker and message-consumption guides
+│   └── examples/         # Example configuration files and scripts
+├── docker-compose.yaml   # Development stack
+└── rabbitmq.conf         # Broker settings (raises consumer_timeout)
 ```
 
 ## Development
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - uv (Python package manager)
 - Docker and Docker Compose (for containerized development)
 - RabbitMQ (included in Docker Compose setup)
@@ -57,10 +66,10 @@ jellyhook/
 
 1. Clone the repository
 2. Navigate to the project directory
-3. Install dependencies:
+3. Install dependencies (each package has its own uv environment):
    ```
-   cd api && uv pip install -e .
-   cd workers && uv pip install -e .
+   cd api && uv sync
+   cd workers && uv sync
    ```
 
 ### Development Commands
@@ -77,8 +86,11 @@ make format
 # Type checking
 make typecheck  # mypy on api and workers; fails on any error
 
-# Run tests
+# Run tests (unit, plus component tests where the media tools are installed)
 make test
+
+# Run integration tests against a real RabbitMQ (needs Docker)
+make test_integration
 
 # Run all checks
 make all
@@ -91,14 +103,22 @@ Using Docker Compose (recommended):
 docker-compose up -d
 ```
 
-Or run services individually:
+Or run services individually. Both need a reachable RabbitMQ.
 
+Run the API (`FLASK_ENV` is required):
+```bash
+cd api
+FLASK_ENV=development uv run flask --app api.main run --port 5001
+```
 
-Run workers:
+Run the worker:
 ```bash
 cd workers
 uv run python -m workers.main
 ```
+
+The compose file is a development stack, not a deployment template. See
+[Development](docs/development/setup.md) for details.
 
 ## Deployment
 
@@ -134,28 +154,43 @@ make push_all ACCOUNT=your-github-username TAG=v1.0.0
 Configure the application using environment variables and configuration files:
 
 #### API Service
-- `FLASK_ENV`: Set to `development` or `production`
-- `LOG_LEVEL`: Logging level (default: "INFO" in production, "DEBUG" in development)
+- `FLASK_ENV`: Set to `development` or `production` (required; the app will not start without it)
 - `RABBITMQ_HOST`: RabbitMQ hostname (default: "rabbitmq")
 - `RABBITMQ_PASS`: RabbitMQ password (default: "guest")
+- `RABBITMQ_PORT`: RabbitMQ port (default: 5672)
 - `RABBITMQ_USER`: RabbitMQ username (default: "guest")
-- `RABBITMQ_VHOST`: RabbitMQ virtual host (default: "/")
+- `RABBITMQ_VHOST`: RabbitMQ virtual host (default: "/"). Must match the worker's `RABBITMQ_VHOST`
 - `SECRET_KEY`: Secret key for Flask (required in production)
+- `WEBHOOK_TOKEN`: Optional shared secret. When set, `/hooks/*` requires
+  `Authorization: Bearer <token>`. When unset, anyone who can reach the API can queue events
 
 #### Worker Service
 - `DEBUG`: Enable debug logging (1 for enabled, 0 for disabled, default: 0)
+- `JELLYFIN_HOST`: Jellyfin URL including the scheme, e.g. `http://jellyfin.lan` (required by the
+  services that call Jellyfin)
+- `JELLYFIN_PORT`: Jellyfin port (default: 8096)
+- `JELLYFIN_API_KEY`: Jellyfin API key
+- `JELLYFIN_USER_ID`: Jellyfin user ID
+- `JELLYHOOK_CONFIG_PATH`: Path to the user configuration file (default: "/config/jellyhook.json")
 - `MOVIE_PATH`: Path to movie files on your system (default: "/data/media/movies")
 - `RABBITMQ_HOST`: RabbitMQ hostname (default: "rabbitmq")
 - `RABBITMQ_PASS`: RabbitMQ password (default: "guest")
+- `RABBITMQ_PORT`: RabbitMQ port (default: 5672)
 - `RABBITMQ_USER`: RabbitMQ username (default: "guest")
 - `RABBITMQ_VHOST`: RabbitMQ virtual host (default: "/"). Must match the API's `RABBITMQ_VHOST`
 - `STANDUP_PATH`: Path to stand-up comedy files (default: "/data/media/stand-up")
 - `TEMP_DIR`: Directory for temporary files (default: "/data/tmp")
-- `WORKER_ENV`: Worker environment (default: "development")
+- `WORKER_ENV`: Worker environment (default: "development"). Set it to `production` to log at
+  INFO and write `/config/logs/worker.log`
+
+Retry, concurrency and shutdown settings (`WORKER_MAX_ATTEMPTS`, `WORKER_MAX_CONCURRENT_JOBS`,
+`WORKER_SHUTDOWN_GRACE_SECONDS`, `RABBITMQ_HEARTBEAT`) are described in the
+[worker README](workers/README.md#message-handling).
 
 #### User Configuration File
 
-The worker service can be configured using a YAML or JSON file:
+The worker service is configured with a YAML or JSON file (see
+[User Configuration](docs/guides/configuration.md)):
 
 ```yaml
 worker:
@@ -189,7 +224,9 @@ worker:
                   max_runtime_minutes: 120
 ```
 
-Place this file at `~/.config/jellyhook/jellyhook.yaml` or specify a custom path with the `JELLYHOOK_CONFIG_PATH` environment variable.
+The worker reads `/config/jellyhook.json` by default. Point `JELLYHOOK_CONFIG_PATH` at another
+path to use a different location or a `.yaml` file. Full examples are in
+[`docs/examples/`](docs/examples/).
 
 ## Code Standards
 
@@ -198,12 +235,8 @@ Place this file at `~/.config/jellyhook/jellyhook.yaml` or specify a custom path
 - **Type Checking**: MyPy for static type checking
 - **Testing**: pytest for testing
 
-### Coding Guidelines
-
-- Use type annotations for all function parameters and return values
-- Follow PEP 8 naming conventions
-- Write meaningful docstrings for public functions and classes
-- Handle errors appropriately with specific exception catching
+See [Code Style](docs/development/code-style.md) for the conventions and
+[Testing](docs/development/testing.md) for the test layers.
 
 ## License
 
