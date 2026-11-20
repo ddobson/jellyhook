@@ -7,6 +7,7 @@ from jellyfin_apiclient_python.exceptions import HTTPException
 from workers.clients.jellyfin import get_client
 from workers.errors import WebhookWorkerError
 from workers.logger import logger
+from workers.models.item import Item
 from workers.models.movie import Movie
 from workers.services.service_base import ServiceBase
 
@@ -217,26 +218,14 @@ class MetadataUpdateService(ServiceBase):
         path_rules = service_config.get("paths", [])
         pattern_rules = service_config.get("patterns", [])
 
-        # Extract original genres
-        original_genres = []
-        if "Genres" in message:
-            genres_str = message.get("Genres", "")
-            if genres_str:
-                original_genres = [g.strip() for g in genres_str.split(",")]
-
-        # Extract original tags
-        original_tags = []
-        if "Tags" in message:
-            tags_str = message.get("Tags", "")
-            if tags_str:
-                original_tags = [t.strip() for t in tags_str.split(",")]
+        item = Item.from_message(message)
 
         return cls(
             movie=movie,
             item_id=item_id,
             path_rules=path_rules,
             pattern_rules=pattern_rules,
-            original_genres=original_genres,
-            original_tags=original_tags,
+            original_genres=list(item.genres),
+            original_tags=list(item.tags),
             item_data=message,
         )
