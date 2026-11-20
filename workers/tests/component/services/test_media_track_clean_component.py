@@ -2,7 +2,6 @@ import json
 import pathlib
 
 from workers import utils
-from workers.models.movie import Movie
 from workers.services.media_track_clean import MediaTrackCleanService
 
 
@@ -57,35 +56,33 @@ def test_keep_multiple_languages(multitrack_service_multi_langs, track_clean_com
 
 
 def test_cleaning_twice_changes_nothing_the_second_time(
-    multitrack_service_all_eng, multitrack_movie, temp_dir
+    multitrack_service_all_eng, multitrack_job, media_job
 ):
     """A redelivered message finds nothing left to remove."""
-    path = pathlib.Path(multitrack_movie.full_path)
+    path = pathlib.Path(multitrack_job.movie.full_path)
     multitrack_service_all_eng.exec()
     cleaned = path.read_bytes()
 
     again = MediaTrackCleanService(
-        multitrack_movie,
+        media_job("Multi-Track Test File"),
         keep_audio_langs=["eng"],
         keep_sub_langs=["eng"],
-        temp_dir=str(temp_dir / "scratch"),
     )
     again.exec()
 
     assert path.read_bytes() == cleaned
 
 
-def test_skip_processing_if_all_streams_kept(multitrack_movie, track_clean_command_mock, temp_dir):
+def test_skip_processing_if_all_streams_kept(multitrack_job, track_clean_command_mock):
     """If every stream is wanted, ffmpeg never runs and the file is not touched."""
-    path = pathlib.Path(multitrack_movie.full_path)
+    path = pathlib.Path(multitrack_job.movie.full_path)
     before = path.read_bytes()
     service = MediaTrackCleanService(
-        multitrack_movie,
+        multitrack_job,
         keep_original=True,
         keep_default=True,
         keep_audio_langs=["eng", "spa", "deu", "jpn"],
         keep_sub_langs=["eng", "fra", "deu", "jpn"],
-        temp_dir=str(temp_dir / "scratch"),
     )
 
     service.exec()
@@ -94,11 +91,11 @@ def test_skip_processing_if_all_streams_kept(multitrack_movie, track_clean_comma
     assert path.read_bytes() == before
 
 
-def test_cleaning_keeps_attachments(temp_dir):
+def test_cleaning_keeps_attachments(temp_dir, media_root, media_job):
     """Fonts attached to an MKV (needed by styled subtitles) survive removing a track."""
     font = temp_dir / "font.ttf"
     font.write_bytes(b"not really a font, but ffmpeg only copies the bytes")
-    movie_dir = temp_dir / "Attachment Test (2025)"
+    movie_dir = media_root / "Attachment Test (2025)"
     movie_dir.mkdir()
     path = movie_dir / "Attachment Test (2025).mkv"
     # One second of video plus an English and a Spanish audio track, and a font attachment
@@ -117,11 +114,10 @@ def test_cleaning_keeps_attachments(temp_dir):
     )  # fmt: skip
     assert [kind for kind, _ in _streams(str(path))] == ["video", "audio", "audio", "attachment"]
     service = MediaTrackCleanService(
-        Movie.from_file(path),
+        media_job("Attachment Test"),
         keep_original=False,
         keep_default=False,
         keep_audio_langs=["eng"],
-        temp_dir=str(temp_dir / "scratch"),
     )
 
     service.exec()

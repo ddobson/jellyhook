@@ -6,8 +6,8 @@ from jellyfin_apiclient_python.exceptions import HTTPException
 
 from workers.clients.jellyfin import get_client
 from workers.errors import WebhookWorkerError
+from workers.job import Job
 from workers.logger import logger
-from workers.models.item import Item
 from workers.models.movie import Movie
 from workers.services.service_base import ServiceBase
 
@@ -201,31 +201,22 @@ class MetadataUpdateService(ServiceBase):
                 ) from e
 
     @classmethod
-    def from_message(cls, message: dict, service_config: dict[str, Any]) -> "MetadataUpdateService":
-        """Create a MetadataUpdateService from a Jellyfin webhook message.
+    def from_message(cls, job: Job, service_config: dict[str, Any]) -> "MetadataUpdateService":
+        """Create a MetadataUpdateService for a message.
 
         Args:
-            message (dict): The Jellyfin webhook message.
+            job (Job): The message's job.
             service_config (dict): The configuration for the metadata update service.
 
         Returns:
             MetadataUpdateService: The initialized MetadataUpdateService.
         """
-        movie_file = cls.file_from_message(message)
-        movie = Movie.from_file(movie_file)
-
-        item_id = message.get("ItemId", "")
-        path_rules = service_config.get("paths", [])
-        pattern_rules = service_config.get("patterns", [])
-
-        item = Item.from_message(message)
-
         return cls(
-            movie=movie,
-            item_id=item_id,
-            path_rules=path_rules,
-            pattern_rules=pattern_rules,
-            original_genres=list(item.genres),
-            original_tags=list(item.tags),
-            item_data=message,
+            movie=job.movie,
+            item_id=job.message.get("ItemId", ""),
+            path_rules=service_config.get("paths", []),
+            pattern_rules=service_config.get("patterns", []),
+            original_genres=list(job.item.genres),
+            original_tags=list(job.item.tags),
+            item_data=job.message,
         )

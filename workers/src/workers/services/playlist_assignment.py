@@ -6,6 +6,7 @@ import requests
 
 from workers.clients.jellyfin import get_client
 from workers.errors import WebhookWorkerError, is_transient
+from workers.job import Job
 from workers.logger import logger
 from workers.models.item import Item
 from workers.services.service_base import ServiceBase
@@ -73,18 +74,18 @@ class PlaylistAssignmentService(ServiceBase):
             logger.info("Applied {} playlist rule(s) for item {}", matches, self.item_id)
 
     @classmethod
-    def from_message(
-        cls, message: dict[str, Any], service_config: dict[str, Any]
-    ) -> PlaylistAssignmentService:
-        """Create a PlaylistAssignmentService from a webhook message and config."""
+    def from_message(cls, job: Job, service_config: dict[str, Any]) -> PlaylistAssignmentService:
+        """Create a PlaylistAssignmentService from a message's job and config.
+
+        This service never touches the media file, so it only reads the job's message and item.
+        """
         rules = service_config.get("rules", [])
         if not isinstance(rules, list):
             raise PlaylistAssignmentError(
                 "Playlist service configuration must include a list of rules"
             )
 
-        item_id = Item.from_message(message).item_id or ""
-        return cls(item_id=item_id, message=message, rules=rules)
+        return cls(item_id=job.item.item_id or "", message=job.message, rules=rules)
 
     def _load_item_details(self) -> dict[str, Any]:
         """Return webhook details enriched with Jellyfin metadata if required."""

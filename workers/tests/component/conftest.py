@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from workers import fileops, utils
-from workers.models.movie import Movie
+from workers import utils
+from workers.job import Job
 from workers.services import DoviConversionService, MediaTrackCleanService
 
 
@@ -15,89 +15,96 @@ def temp_dir(tmp_path):
 
 
 @pytest.fixture
-def asset_copies(temp_dir):
-    # Get the path to the assets directory
+def media_root(temp_dir):
+    """A media library root; scratch space lives beside it in `temp_dir / "scratch"`."""
+    root = temp_dir / "media"
+    root.mkdir()
+    return root
+
+
+@pytest.fixture
+def media_job(media_root, temp_dir):
+    """Factory for Jobs over the temporary media tree, closed (scratch removed) after the test."""
+    jobs: list[Job] = []
+
+    def make(name: str, year: int = 2025) -> Job:
+        job = Job(
+            {"Name": name, "Year": year, "ItemType": "Movie"},
+            media_paths=(str(media_root),),
+            temp_dir=str(temp_dir / "scratch"),
+        )
+        jobs.append(job)
+        return job
+
+    yield make
+    for job in jobs:
+        job.close()
+
+
+@pytest.fixture
+def asset_copies(media_root):
+    """Copy the test assets into the media tree, one "<Name> (<Year>)" folder each."""
     assets_dir = pathlib.Path(__file__).parent.parent / "assets"
-
-    # Create a copy directory for test assets
-    test_assets_dir = temp_dir / "assets"
-    test_assets_dir.mkdir(exist_ok=True)
-
-    # Copy the P7 test file
-    p7_source = (
-        assets_dir
-        / "DoVi P7 Test File (2025) [tmdbid-67890] - [Bluray-2160p][DV HDR10][DTS-HD MA 5.1][x265]-TESTFILE.mkv"
-    )
-    p7_dest = test_assets_dir / p7_source.name
-    shutil.copy2(p7_source, p7_dest)
-
-    # Copy the P8 test file
-    p8_source = (
-        assets_dir
-        / "DoVi P8 Test File (2025) [tmdbid-12345] - [Bluray-2160p][DV HDR10][DTS-HD MA 5.1][x265]-TESTFILE.mkv"
-    )
-    p8_dest = test_assets_dir / p8_source.name
-    shutil.copy2(p8_source, p8_dest)
-
-    # Copy the multi-track test file
-    multitrack_source = (
-        assets_dir
-        / "Multi-Track Test File (2025) [tmdbid45678] - [Bluray-2160p][AAC][x264]-TESTFILE.mkv"
-    )
-    multitrack_dest = test_assets_dir / multitrack_source.name
-    shutil.copy2(multitrack_source, multitrack_dest)
-
-    return {"p7": p7_dest, "p8": p8_dest, "multitrack": multitrack_dest}
+    names = {
+        "p7": "DoVi P7 Test File (2025) [tmdbid-67890] - [Bluray-2160p][DV HDR10][DTS-HD MA 5.1][x265]-TESTFILE.mkv",
+        "p8": "DoVi P8 Test File (2025) [tmdbid-12345] - [Bluray-2160p][DV HDR10][DTS-HD MA 5.1][x265]-TESTFILE.mkv",
+        "multitrack": "Multi-Track Test File (2025) [tmdbid45678] - [Bluray-2160p][AAC][x264]-TESTFILE.mkv",
+    }
+    copies = {}
+    for key, file_name in names.items():
+        folder = media_root / f"{file_name.split(' (2025)')[0]} (2025)"
+        folder.mkdir()
+        copies[key] = folder / file_name
+        shutil.copy2(assets_dir / file_name, copies[key])
+    return copies
 
 
 @pytest.fixture
-def p7_movie(asset_copies):
-    return Movie.from_file(asset_copies["p7"])
+def p7_job(asset_copies, media_job):
+    return media_job("DoVi P7 Test File")
 
 
 @pytest.fixture
-def p8_movie(asset_copies):
-    return Movie.from_file(asset_copies["p8"])
+def p8_job(asset_copies, media_job):
+    return media_job("DoVi P8 Test File")
 
 
 @pytest.fixture
-def multitrack_movie(asset_copies):
-    return Movie.from_file(asset_copies["multitrack"])
+def multitrack_job(asset_copies, media_job):
+    return media_job("Multi-Track Test File")
 
 
 @pytest.fixture
-def p7_service(p7_movie, temp_dir):
-    return DoviConversionService(p7_movie, fileops.make_job_dir(temp_dir / "scratch", "p7"))
+def p7_service(p7_job):
+    return DoviConversionService(p7_job)
 
 
 @pytest.fixture
-def p8_service(p8_movie, temp_dir):
-    return DoviConversionService(p8_movie, fileops.make_job_dir(temp_dir / "scratch", "p8"))
+def p8_service(p8_job):
+    return DoviConversionService(p8_job)
 
 
 @pytest.fixture
-def multitrack_service_all_eng(multitrack_movie, temp_dir):
+def multitrack_service_all_eng(multitrack_job):
     """MediaTrackCleanService configured to keep only English tracks."""
     return MediaTrackCleanService(
-        multitrack_movie,
+        multitrack_job,
         keep_original=True,
         keep_default=True,
         keep_audio_langs=["eng"],
         keep_sub_langs=["eng"],
-        temp_dir=str(temp_dir / "scratch"),
     )
 
 
 @pytest.fixture
-def multitrack_service_multi_langs(multitrack_movie, temp_dir):
+def multitrack_service_multi_langs(multitrack_job):
     """MediaTrackCleanService configured to keep English, Spanish and German."""
     return MediaTrackCleanService(
-        multitrack_movie,
+        multitrack_job,
         keep_original=False,
         keep_default=False,
         keep_audio_langs=["eng", "spa", "deu"],
         keep_sub_langs=["eng", "deu"],
-        temp_dir=str(temp_dir / "scratch"),
     )
 
 

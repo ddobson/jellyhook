@@ -4,10 +4,12 @@ This module provides a class for orchestrating the execution of services
 based on configuration for a specific webhook.
 
 Service registration quick reference:
-1. Implement a `ServiceBase` subclass with both `exec()` and `from_message()`
+1. Implement a `ServiceBase` subclass with both `exec()` and `from_message(job, config)`
    factory methods so the orchestrator can build and run it.
-    - Use `ServiceBase.file_from_message()` helpers and follow the patterns in
-      `metadata_update.py` or `dovi_conversion.py` as guides.
+    - Ask the `Job` for the movie (`job.movie`), scratch space (`job.scratch_dir()`) and the
+      file swap (`job.replace_media_file()`); follow `metadata_update.py` or
+      `dovi_conversion.py` as guides. Set `modifies_media = True` if the service rewrites the
+      file, so the orchestrator holds the file lock around `exec()`.
 2. Register the service name in the maps below:
     - `SERVICE_MODULES` maps the new service's config name to its module path.
     - `SERVICE_CLASSES` maps the same name to the concrete class identifier in that module.
@@ -23,13 +25,13 @@ Service registration quick reference:
 
 import importlib
 import json
-from pathlib import Path
+from collections.abc import Sequence
+from os import PathLike
 from typing import Any
 
-from workers import fileops
-from workers.config import WorkerConfig
+from workers.config import MEDIA_PATHS, TEMP_DIR, WorkerConfig
 from workers.errors import ServiceConfigurationError, is_transient
-from workers.fileops import media_file_lock
+from workers.job import Job
 from workers.logger import logger
 from workers.results import ProcessingResult
 from workers.services.service_base import ServiceBase
@@ -57,14 +59,25 @@ class ServiceOrchestrator:
     configured for a specific webhook.
     """
 
-    def __init__(self, webhook_id: str) -> None:
+    def __init__(
+        self,
+        webhook_id: str,
+        media_paths: Sequence[str] = MEDIA_PATHS,
+        temp_dir: str | PathLike[str] = TEMP_DIR,
+    ) -> None:
         """Initialize the service orchestrator.
+
+        This is where the media library roots and the default scratch location are resolved; the
+        Job and the services only ever see these explicit values.
 
         Args:
             webhook_id: The ID of the webhook to orchestrate services for.
+            media_paths: The library roots to search for an item's file.
+            temp_dir: The default base directory for scratch space.
         """
         self.webhook_id = webhook_id
-        self.temp_dirs: set[Path] = set()
+        self.media_paths = media_paths
+        self.temp_dir = temp_dir
         self.worker_config = WorkerConfig()
 
     def is_webhook_enabled(self) -> bool:
@@ -87,7 +100,7 @@ class ServiceOrchestrator:
     def create_service_instance(
         self,
         service_name: str | None,
-        message: dict[str, Any],
+        job: Job,
         service_config: dict[str, Any],
     ) -> ServiceBase | None:
         """Create an instance of a service.
@@ -95,7 +108,7 @@ class ServiceOrchestrator:
         Args:
             service_name (str | None): The name of the service to create. A missing name is
                 reported as an unknown service.
-            message (dict[str, Any]): The webhook message to process.
+            job (Job): The message's job.
             service_config (dict[str, Any]): The configuration for the service.
 
         Returns:
@@ -120,13 +133,13 @@ class ServiceOrchestrator:
             err_msg = f"Failed to import service {service_name}: {e}"
             raise ServiceConfigurationError(err_msg) from e
 
-        if service_class.movies_only and not ServiceBase.is_movie_message(message):
-            logger.info(f"Skipping {service_name}: {message.get('ItemType')} is not a movie")
+        if service_class.movies_only and not job.item.is_movie:
+            logger.info(f"Skipping {service_name}: {job.item.item_type} is not a movie")
             return None
 
         # Outside the try above: an AttributeError raised by the service itself is a bug in
         # that service, and should surface as one rather than as a missing class.
-        return service_class.from_message(message, service_config)
+        return service_class.from_message(job, service_config)
 
     def process_webhook(self, message: dict[str, Any]) -> ProcessingResult:
         """Process a webhook message with configured services.
@@ -150,7 +163,25 @@ class ServiceOrchestrator:
             logger.info(f"No enabled services configured for webhook {self.webhook_id}")
             return ProcessingResult.success()
 
-        # Process each service in priority order
+        # One Job per message: it locates the file once, hands out scratch space on demand and
+        # removes it on exit, including when a service fails part-way through exec().
+        with Job(message, media_paths=self.media_paths, temp_dir=self.temp_dir) as job:
+            failures = self._run_services(job, enabled_services)
+
+        return self._summarize_failures(failures)
+
+    def _run_services(
+        self, job: Job, enabled_services: list[dict[str, Any]]
+    ) -> list[tuple[str, Exception]]:
+        """Run each enabled service in order, collecting failures instead of stopping at one.
+
+        Args:
+            job: The message's job.
+            enabled_services: The service configurations, already in priority order.
+
+        Returns:
+            The (service name, exception) pairs that failed.
+        """
         failures: list[tuple[str, Exception]] = []
         for enabled_service in enabled_services:
             service_name = enabled_service.get("name")
@@ -159,7 +190,7 @@ class ServiceOrchestrator:
 
             try:
                 # Dynamically import and instantiate the service
-                service = self.create_service_instance(service_name, message, service_config)
+                service = self.create_service_instance(service_name, job, service_config)
                 if not service:
                     # This could be an error or a deliberate skip based on service configuration
                     logger.info(
@@ -167,12 +198,7 @@ class ServiceOrchestrator:
                     )
                     continue
 
-                # Track the scratch directory before running, so it is cleaned up even if
-                # exec() fails part-way (that is exactly when files get left behind)
-                if hasattr(service, "tmp_dir"):
-                    self.temp_dirs.add(service.tmp_dir)
-
-                self._run_service(service)
+                self._run_service(service, job)
 
             except Exception as e:
                 logger.error(f"Service {service_name} failed: {e}")
@@ -182,17 +208,15 @@ class ServiceOrchestrator:
                 # otherwise the update would be lost and the message acked as a success.
                 if service_name != "metadata_update" or is_transient(e):
                     failures.append((str(service_name), e))
-
-        return self._summarize_failures(failures)
+        return failures
 
     @staticmethod
-    def _run_service(service: ServiceBase) -> None:
-        """Run a service, holding the lock for the file it modifies (if any)."""
-        locked_path = service.locked_path
-        if locked_path is None:
+    def _run_service(service: ServiceBase, job: Job) -> None:
+        """Run a service, holding the lock for the media file if the service rewrites it."""
+        if not service.modifies_media:
             service.exec()
             return
-        with media_file_lock(locked_path):
+        with job.file_lock():
             service.exec()
 
     @staticmethod
@@ -209,13 +233,6 @@ class ServiceOrchestrator:
         if any(is_transient(e) for _, e in failures):
             return ProcessingResult.retry(reason)
         return ProcessingResult.failed(reason)
-
-    def cleanup(self) -> None:
-        """Remove the scratch directories created by services. Never raises."""
-        for tmp_dir in self.temp_dirs:
-            logger.info(f"Cleaning temporary files for '{tmp_dir}'...")
-            fileops.remove_dir(tmp_dir)
-        self.temp_dirs.clear()
 
 
 def process_webhook_message(webhook_id: str, message_body: bytes) -> ProcessingResult:
@@ -241,7 +258,6 @@ def process_webhook_message(webhook_id: str, message_body: bytes) -> ProcessingR
         logger.error(f"Message for webhook {webhook_id} is not a JSON object")
         return ProcessingResult.failed(f"Expected a JSON object, got {type(message).__name__}")
 
-    orchestrator: ServiceOrchestrator | None = None
     try:
         orchestrator = ServiceOrchestrator(webhook_id)
         return orchestrator.process_webhook(message)
@@ -251,6 +267,3 @@ def process_webhook_message(webhook_id: str, message_body: bytes) -> ProcessingR
         return (
             ProcessingResult.retry(reason) if is_transient(e) else ProcessingResult.failed(reason)
         )
-    finally:
-        if orchestrator is not None:
-            orchestrator.cleanup()
