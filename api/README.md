@@ -43,13 +43,13 @@ JellyHook API receives and processes webhook events from Jellyfin (a media serve
 These are the names `api/config.py` actually reads. Using any other name (for example
 `RABBITMQ_USERNAME`) is silently ignored and the API falls back to the `guest` defaults.
 
-- `FLASK_ENV`: Set to 'development' or 'production'
-- `SECRET_KEY`: Flask secret key (production)
+- `FLASK_ENV`: Set to 'development' or 'production'. Required; the app will not start without it
+- `SECRET_KEY`: Flask secret key (required in production)
 - `RABBITMQ_HOST`: RabbitMQ server hostname (default `rabbitmq`)
 - `RABBITMQ_USER`: RabbitMQ username (default `guest`)
 - `RABBITMQ_PASS`: RabbitMQ password (default `guest`)
 - `RABBITMQ_PORT`: RabbitMQ port (default `5672`)
-- `RABBITMQ_VHOST`: RabbitMQ virtual host
+- `RABBITMQ_VHOST`: RabbitMQ virtual host (default `/`). Must match the worker's
 - `WEBHOOK_TOKEN`: optional shared secret. When set, `/hooks/*` requires
   `Authorization: Bearer <token>`; `/health` stays open. Unset means no authentication, and the
   API logs a warning at startup.

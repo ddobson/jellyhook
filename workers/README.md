@@ -10,17 +10,21 @@ JellyHook Worker is a service that processes media-related tasks triggered by Je
 - **Client Modules**: Handles external integrations like RabbitMQ and Jellyfin API
 - **Service Modules**: Specialized services for media processing tasks
 - **Config System**: User-configurable webhooks and services
-- **Movie Class**: Models media files and their metadata for processing
+- **Job**: Built once per message. Owns the item, the media file, scratch space and the file lock
+- **Item and Movie Models**: `Item` parses the webhook payload; `Movie` models the media file and
+  its parsed filename
 
 ## Current Capabilities
 
 The worker currently implements:
 
 - **Dolby Vision Conversion**: Automatically converts Dolby Vision videos from profile 7.x to profile 8.x format, improving compatibility with various media players and devices
+- **Track Cleaning** (`media_track_clean`): Removes audio and subtitle tracks that do not match the
+  configured languages or original/default flags
 - **Metadata Updates**: Configurable metadata changes based on file paths or content patterns
+- **Playlist Assignment** (`playlist_assignment`): Adds items to Jellyfin playlists when rule
+  conditions (item type, runtime, release year, genres, tags) match
 - **User Configuration**: Support for custom webhook and service configuration via YAML/JSON
-
-Additional media processing capabilities are planned for future releases.
 
 ## Directory Structure
 
@@ -29,19 +33,26 @@ workers/
 ├── src/workers/
 │   ├── clients/       # Client implementations (Jellyfin, RabbitMQ)
 │   ├── config/        # Configuration handling
-│   ├── services/      # Service implementations
+│   ├── models/        # Item and Movie models
+│   ├── parsers/       # Movie filename parsers
+│   ├── services/      # Service implementations and the orchestrator
+│   ├── job.py         # Per-message Job
 │   └── ...
 └── tests/
-    ├── component/     # Component/integration tests
-    └── unit/          # Unit tests
+    ├── unit/          # Unit tests
+    ├── component/     # Tests that run the real media tools
+    └── integration/   # Tests against a real RabbitMQ (need Docker)
 ```
 
 ## Workflow
 
 1. Jellyfin sends a webhook when media-related events occur
 2. The worker service receives the message via RabbitMQ client
-3. Service orchestrator loads appropriate services based on user configuration
-4. Services execute in priority order to process the media
+3. Service orchestrator builds a `Job` for the message and loads the enabled services for that
+   webhook from the user configuration
+4. Services execute in priority order to process the media. Services that work on the movie file
+   (`metadata_update`, `dovi_conversion`, `media_track_clean`) are skipped for items that are not
+   movies
 
 ## Message Handling
 
@@ -119,6 +130,9 @@ worker:
             # Service-specific configuration
 ```
 
+The worker reads `/config/jellyhook.json` unless `JELLYHOOK_CONFIG_PATH` says otherwise. See
+[User Configuration](../docs/guides/configuration.md) and [`docs/examples/`](../docs/examples/).
+
 ## Deployment
 
 The application is containerized using Docker. Environment variables control:
@@ -137,5 +151,9 @@ uv sync
 # Run tests
 uv run pytest
 
-# Run component tests
+# Run component tests (need ffmpeg, mkvtoolnix and dovi_tool)
 uv run pytest tests/component
+
+# Run integration tests (need Docker)
+uv run pytest -m integration tests/integration
+```
