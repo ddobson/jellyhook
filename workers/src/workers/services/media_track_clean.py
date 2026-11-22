@@ -4,10 +4,15 @@ import pathlib
 import subprocess
 from typing import Sequence
 
+from workers.errors import WebhookWorkerError
 from workers.job import Job
 from workers.logger import logger
 from workers.services.service_base import ServiceBase
 from workers.utils import run_command
+
+
+class TrackCleanError(WebhookWorkerError):
+    """Cleaning the tracks would leave the movie broken, so the original is kept as it is."""
 
 
 class MediaStream:
@@ -153,6 +158,13 @@ class MediaTrackCleanService(ServiceBase):
         streams_to_keep = self._evaluate_streams(streams)
         logger.info(f"Keeping {len(streams_to_keep)} streams out of {len(streams)}")
 
+        # A movie that had audio must not end up without any
+        if self._has_audio(streams) and not self._has_audio(streams_to_keep):
+            raise TrackCleanError(
+                f"Cleaning would remove every audio track from {self.movie.full_title}; "
+                "keeping the original file unchanged"
+            )
+
         # Skip if all streams should be kept
         if len(streams_to_keep) == len(streams):
             logger.info(
@@ -167,6 +179,11 @@ class MediaTrackCleanService(ServiceBase):
 
         # Replace original file with processed file
         self._replace_original_file(output_file)
+
+    @staticmethod
+    def _has_audio(streams: Sequence[MediaStream]) -> bool:
+        """Whether any of the streams is an audio track."""
+        return any(stream.codec_type == "audio" for stream in streams)
 
     def _get_media_streams(self) -> list[MediaStream]:
         """Get media streams from the movie file.
@@ -318,6 +335,9 @@ class MediaTrackCleanService(ServiceBase):
         Args:
             output_file: Path to the processed file.
         """
+        if not output_file.is_file() or output_file.stat().st_size == 0:
+            raise TrackCleanError(f"ffmpeg produced no output at {output_file}")
+
         # One atomic swap. The old backup-rename-delete dance had a window where the movie
         # existed only as "<name>.bak", which no library scan would pick up.
         self.job.replace_media_file(output_file)
