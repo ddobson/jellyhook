@@ -283,21 +283,40 @@ def test_cleaning_that_would_drop_all_audio_is_refused(mock_run_command, job, mo
     assert movie_file.read_text() == "movie content"
 
 
+@pytest.mark.parametrize("write_empty_file", [False, True], ids=["no-file", "zero-bytes"])
 @patch("workers.services.media_track_clean.run_command")
 def test_empty_output_never_replaces_the_original(
-    mock_run_command, job, movie_file, mock_ffprobe_output
+    mock_run_command, job, movie_file, mock_ffprobe_output, write_empty_file
 ):
-    """Ffmpeg can exit 0 and still leave nothing behind. The original must stay."""
-    mock_run_command.side_effect = [
-        MagicMock(stdout=json.dumps(mock_ffprobe_output)),
-        MagicMock(returncode=0),
-    ]
+    """Ffmpeg can exit 0 and still leave nothing usable behind. The original must stay."""
+    ffprobe_result = MagicMock(stdout=json.dumps(mock_ffprobe_output))
+
+    def fake_ffmpeg(cmd, **kwargs):
+        if cmd[0] == "ffprobe":
+            return ffprobe_result
+        if write_empty_file:
+            Path(cmd[-1]).write_bytes(b"")
+        return MagicMock(returncode=0)
+
+    mock_run_command.side_effect = fake_ffmpeg
     service = MediaTrackCleanService(job, keep_audio_langs=["eng"])
 
     with pytest.raises(TrackCleanError, match="no output"):
         service.exec()
 
     assert movie_file.read_text() == "movie content"
+
+
+@patch("workers.services.media_track_clean.run_command")
+def test_movie_without_audio_to_begin_with_is_not_refused(mock_run_command, job):
+    """Nothing to lose: a video-only movie is left alone, without an error."""
+    video_only = {"streams": [{"index": 0, "codec_type": "video", "disposition": {}}]}
+    mock_run_command.return_value = MagicMock(stdout=json.dumps(video_only))
+    service = MediaTrackCleanService(job, keep_audio_langs=["eng"])
+
+    service.exec()
+
+    assert mock_run_command.call_count == 1  # ffprobe only
 
 
 def test_media_track_clean_service_from_message(job, tmp_path):

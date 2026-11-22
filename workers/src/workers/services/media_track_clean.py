@@ -12,7 +12,7 @@ from workers.utils import run_command
 
 
 class TrackCleanError(WebhookWorkerError):
-    """Cleaning the tracks would leave the movie broken, so the original is kept as it is."""
+    """Cleaning was refused: it would strip all audio, or ffmpeg wrote no file."""
 
 
 class MediaStream:
@@ -158,7 +158,7 @@ class MediaTrackCleanService(ServiceBase):
         streams_to_keep = self._evaluate_streams(streams)
         logger.info(f"Keeping {len(streams_to_keep)} streams out of {len(streams)}")
 
-        # A movie that had audio must not end up without any
+        # Never strip every audio track from a movie that had some
         if self._has_audio(streams) and not self._has_audio(streams_to_keep):
             raise TrackCleanError(
                 f"Cleaning would remove every audio track from {self.movie.full_title}; "
@@ -329,15 +329,15 @@ class MediaTrackCleanService(ServiceBase):
             logger.error(f"FFmpeg error: {e.stderr}")
             raise
 
+        if not output_file.is_file() or output_file.stat().st_size == 0:
+            raise TrackCleanError(f"ffmpeg produced no output at {output_file}")
+
     def _replace_original_file(self, output_file: pathlib.Path) -> None:
         """Replace the original file with the processed file.
 
         Args:
             output_file: Path to the processed file.
         """
-        if not output_file.is_file() or output_file.stat().st_size == 0:
-            raise TrackCleanError(f"ffmpeg produced no output at {output_file}")
-
         # One atomic swap. The old backup-rename-delete dance had a window where the movie
         # existed only as "<name>.bak", which no library scan would pick up.
         self.job.replace_media_file(output_file)
