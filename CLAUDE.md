@@ -19,3 +19,17 @@ For style conventions, see `docs/development/code-style.md`.
 For test layers and when to add which, see `docs/development/testing.md`.
 For the user config file, see `docs/guides/configuration.md`.
 For deploying with plain Docker, see `docs/guides/docker.md`.
+
+## Agent skills
+
+### Issue tracker
+
+Project issues live in [Linear](https://linear.app/jellyhook/team/JLYH/all). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+For issue triage, see `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+For domain terminology and decisions, see `docs/agents/domain.md`.
