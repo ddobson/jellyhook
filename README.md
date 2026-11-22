@@ -211,7 +211,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Project issues are tracked in [Linear](https://linear.app/jellyhook/team/JLYH/all).
 
 1. Fork the project
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
