@@ -4,10 +4,15 @@ import pathlib
 import subprocess
 from typing import Sequence
 
+from workers.errors import WebhookWorkerError
 from workers.job import Job
 from workers.logger import logger
 from workers.services.service_base import ServiceBase
 from workers.utils import run_command
+
+
+class TrackCleanError(WebhookWorkerError):
+    """Cleaning was refused: it would strip all audio, or ffmpeg wrote no file."""
 
 
 class MediaStream:
@@ -153,6 +158,13 @@ class MediaTrackCleanService(ServiceBase):
         streams_to_keep = self._evaluate_streams(streams)
         logger.info(f"Keeping {len(streams_to_keep)} streams out of {len(streams)}")
 
+        # Never strip every audio track from a movie that had some
+        if self._has_audio(streams) and not self._has_audio(streams_to_keep):
+            raise TrackCleanError(
+                f"Cleaning would remove every audio track from {self.movie.full_title}; "
+                "keeping the original file unchanged"
+            )
+
         # Skip if all streams should be kept
         if len(streams_to_keep) == len(streams):
             logger.info(
@@ -167,6 +179,11 @@ class MediaTrackCleanService(ServiceBase):
 
         # Replace original file with processed file
         self._replace_original_file(output_file)
+
+    @staticmethod
+    def _has_audio(streams: Sequence[MediaStream]) -> bool:
+        """Whether any of the streams is an audio track."""
+        return any(stream.codec_type == "audio" for stream in streams)
 
     def _get_media_streams(self) -> list[MediaStream]:
         """Get media streams from the movie file.
@@ -311,6 +328,9 @@ class MediaTrackCleanService(ServiceBase):
             logger.error(f"Failed to process file {self.movie.full_path}: {e}")
             logger.error(f"FFmpeg error: {e.stderr}")
             raise
+
+        if not output_file.is_file() or output_file.stat().st_size == 0:
+            raise TrackCleanError(f"ffmpeg produced no output at {output_file}")
 
     def _replace_original_file(self, output_file: pathlib.Path) -> None:
         """Replace the original file with the processed file.
