@@ -83,7 +83,7 @@ class MetadataUpdateService(ServiceBase):
 
         for path_rule in self.path_rules:
             rule_path = pathlib.Path(path_rule["path"])
-            if str(file_path).startswith(str(rule_path)):
+            if file_path.is_relative_to(rule_path):
                 self.matching_rules.append(path_rule)
                 logger.info(f"Matched path rule: {rule_path}")
 
