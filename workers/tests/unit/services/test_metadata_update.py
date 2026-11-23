@@ -433,6 +433,56 @@ def test_end_to_end_standup_path(make_job, standup_file, mock_message_standup, m
     )
 
 
+def test_path_rule_does_not_update_sibling_folder(mock_movie_standup, mock_client):
+    mock_movie_standup.full_path = "/data/media/stand-up-extra/movie.mkv"
+    service = MetadataUpdateService(
+        movie=mock_movie_standup,
+        item_id="123456",
+        path_rules=[
+            {
+                "path": "/data/media/stand-up",
+                "genres": {"new_genres": ["Stand-Up"]},
+                "tags": {"new_tags": ["Special"]},
+            }
+        ],
+    )
+
+    service.exec()
+
+    mock_client.update_item.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("rule_path", "file_path"),
+    [
+        ("/data/media/stand-up", "/data/media/stand-up/movie.mkv"),
+        ("/data/media/stand-up/", "/data/media/stand-up/show/movie.mkv"),
+        ("/", "/data/media/movie.mkv"),
+    ],
+)
+def test_path_rule_updates_files_in_folder_and_nested_folders(
+    mock_movie_standup, mock_client, rule_path, file_path
+):
+    mock_movie_standup.full_path = file_path
+    service = MetadataUpdateService(
+        movie=mock_movie_standup,
+        item_id="123456",
+        path_rules=[
+            {
+                "path": rule_path,
+                "genres": {"new_genres": ["Stand-Up"]},
+                "tags": {"new_tags": ["Special"]},
+            }
+        ],
+    )
+
+    service.exec()
+
+    mock_client.update_item.assert_called_once_with(
+        "123456", {"Genres": ["Stand-Up"], "Tags": ["Special"]}
+    )
+
+
 def test_end_to_end_pattern_match(make_job, standup_file, mock_message_standup, mock_client):
     # Execute
     # Add Overview field to mock_message_standup for pattern matching
