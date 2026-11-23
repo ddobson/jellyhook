@@ -457,6 +457,40 @@ def test_end_to_end_pattern_match(make_job, standup_file, mock_message_standup, 
     )
 
 
+@pytest.mark.parametrize(("field", "config_key"), [("Genres", "genres"), ("Tags", "tags")])
+def test_replace_then_add_does_not_change_rules_for_next_message(
+    make_job, standup_file, mock_message_standup, mock_client, field, config_key
+):
+    service_config = {
+        "patterns": [
+            {
+                "match_pattern": ".*",
+                config_key: {f"new_{config_key}": ["Replacement"], "replace_existing": True},
+            },
+            {
+                "match_field": "Overview",
+                "match_pattern": "performs",
+                config_key: {f"new_{config_key}": ["Addition"]},
+            },
+        ]
+    }
+    second_message = {
+        **mock_message_standup,
+        "ItemId": "second",
+        "Name": "Comedy Special",
+        "Year": 2022,
+        "Overview": "Another show",
+    }
+
+    MetadataUpdateService.from_message(make_job(mock_message_standup), service_config).exec()
+    MetadataUpdateService.from_message(make_job(second_message), service_config).exec()
+
+    assert mock_client.update_item.call_args_list == [
+        mock.call("123456", {field: ["Replacement", "Addition"]}),
+        mock.call("second", {field: ["Replacement"]}),
+    ]
+
+
 def test_update_metadata_lets_a_jellyfin_outage_propagate(mock_movie_standup):
     """get_client() failing must surface as the retryable error, not a MetadataUpdateError."""
     from workers.clients.jellyfin import JellyfinUnavailableError

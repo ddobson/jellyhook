@@ -129,6 +129,7 @@ dmypy.json
 cython_debug/
 
 # Miscellaneous
+/.claude/
 CLAUDE.local.md
 WARP.md
 *.DS_Store

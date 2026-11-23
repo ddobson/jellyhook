@@ -123,7 +123,7 @@ class MetadataUpdateService(ServiceBase):
 
             if replace_existing:
                 # This rule completely replaces existing genres
-                new_genres = new_rule_genres
+                new_genres = new_rule_genres.copy()
             else:
                 # This rule adds new genres to existing ones
                 for genre in new_rule_genres:
@@ -150,7 +150,7 @@ class MetadataUpdateService(ServiceBase):
 
             if replace_existing:
                 # This rule completely replaces existing tags
-                new_tags = new_rule_tags
+                new_tags = new_rule_tags.copy()
             else:
                 # This rule adds new tags to existing ones
                 for tag in new_rule_tags:
