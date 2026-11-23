@@ -53,6 +53,10 @@ def test_pika_debug_noise_is_filtered(logging_app: Flask) -> None:
 
 def test_werkzeug_stays_silenced(logging_app: Flask) -> None:
     """The dev server's request logging is still dropped (loguru logs requests itself)."""
+    # pytest attaches capture handlers between fixture setup and the test.
+    app = Flask("werkzeug-test")
+    app.config["ENV"] = "development"
+    init_app(app)
     werkzeug_logger = logging.getLogger("werkzeug")
 
     assert all(isinstance(h, logging.NullHandler) for h in werkzeug_logger.handlers)
